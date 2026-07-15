@@ -6,9 +6,10 @@ detail. Cross-reference, do not duplicate.
 
 <!-- TODO(corpus-catalog): add these zfs-forensic entries (zfs_label0.bin,
      zfs_mos_objset.bin, zfs_mos_l1_indirect_lz4.bin, zfs_zap_fat_objdir.bin,
-     zfs_zap_micro_master.bin, zfs_zap_micro_root.bin + the env-gated zfs.img) to
-     issen/docs/corpus-catalog.md when the P0/P1/P2 work is folded into the fleet
-     catalog. -->
+     zfs_zap_micro_master.bin, zfs_zap_micro_root.bin, the P3 SA fixtures
+     zfs_sa_file_dnode.bin, zfs_sa_dir_dnode.bin, zfs_sa_registry.bin,
+     zfs_sa_layouts.bin + the env-gated zfs.img) to issen/docs/corpus-catalog.md
+     when the P0–P3 work is folded into the fleet catalog. -->
 
 ## Committed fixtures
 
@@ -104,6 +105,65 @@ detail. Cross-reference, do not duplicate.
   — the two minted files.
 - **md5:** `44d153bde208d45cd408b121918ba71f`
 - **Consumed by:** `core/tests/zap.rs` (always-on, no env gate).
+
+### `zfs_sa_file_dnode.bin` (P3)
+
+- **Class:** `REAL-self` (Tier-2). Object **2** (`/foo.txt`) of the `tpool`
+  dataset — a 512-byte `dnode_phys_t` with `dn_type = 19` (plain file),
+  `dn_bonustype = 44` (`DMU_OT_SA`), and a **176-byte SA bonus**. Extracted by
+  reading the ZPL meta-dnode L0 block holding objects 0–31
+  (`zdb -R … 0:401a000:1000:r`, LZ4-inflate to 16 KiB) and slicing slot 2
+  (offset 1024, 512 bytes).
+- **Independent-oracle checks it satisfies:** `decode_sa_bonus` against the SA
+  registry + layouts yields exactly what `zdb -dddddd tpool/ 2` reports —
+  mode `100644`, size `20`, gen `11`, links `1`, uid/gid `0`, parent `34`,
+  atime/crtime sec `1783939238` nsec `403052711`, mtime/ctime sec `1783939238`
+  nsec `405052711`. SA header magic `0x2F505A`, `sa_layout_info` → layout `3`,
+  header size `8`.
+- **md5:** `e8eb4549bbe7a167a3a3c546a5d89153`
+- **Consumed by:** `core/tests/sa.rs` (always-on, no env gate).
+
+### `zfs_sa_dir_dnode.bin` (P3)
+
+- **Class:** `REAL-self` (Tier-2). Object **3** (`/sub`) — a 512-byte directory
+  dnode (`dn_type = 20`), SA bonus. Same block/extract as above, slot 3
+  (offset 1536).
+- **Independent-oracle checks it satisfies:** `decode_sa_bonus` matches
+  `zdb -dddddd tpool/ 3` — mode `40755`, size `3`, links `2`, gen `11`.
+- **md5:** `a4b481a3389ec821f89b568fee581d8a`
+- **Consumed by:** `core/tests/sa.rs` (always-on, no env gate).
+
+### `zfs_sa_registry.bin` (P3)
+
+- **Class:** `REAL-self` (Tier-2). The **SA attribute registration** (object 35,
+  named `REGISTRY` by the SA master node object 32) — a 1536-byte **micro-ZAP**
+  of 22 entries, **uncompressed** on disk. Extracted with the `zdb` oracle:
+  `zdb -R -e -p /media/psf/tmp/zfs tpool 0:0:600:r` (its L0 block, 1.5 KiB).
+- **Encoding:** each entry's u64 value packs `[length:bswap:id]` per
+  `ATTR_LENGTH(x)=BF32_GET(x,24,16)`, `ATTR_BSWAP(x)=BF32_GET(x,16,8)`,
+  `ATTR_NUM(x)=BF32_GET(x,0,16)` (`sa_impl.h`). E.g. `ZPL_MODE = id 5, len 8`;
+  `ZPL_ATIME = id 0, len 16`.
+- **Independent-oracle checks it satisfies:** `parse_sa_registry` yields the 22
+  attr names + ids/sizes `zdb -dddddd tpool/ 35` reports.
+- **md5:** `4927c8159b5d150646d9788f12c7e920`
+- **Consumed by:** `core/tests/sa.rs` (always-on, no env gate).
+
+### `zfs_sa_layouts.bin` (P3)
+
+- **Class:** `REAL-self` (Tier-2). The **SA attribute layouts** (object 36, named
+  `LAYOUTS` by the SA master node) — a **fat-ZAP** (header block 0 ++ leaf
+  block 1, each 16 KiB, **decompressed** from LZ4 and concatenated to 32 KiB).
+  Extracted via the `zdb` oracle then inflated by the same LZ4 codec the reader
+  uses: `zdb -R … 0:4018000:1000:r` (block 0) and `0:4017000:1000:r` (block 1).
+- **Encoding:** each entry's name is the layout number (`"2"`, `"3"`) and its
+  value is an array of `le_int_size = 2` (u16) attribute ids stored **big-endian**
+  (the fat-ZAP value byte order). `zdb -dddddd tpool/ 36`:
+  `2 = [5 6 4 12 13 7 11 0 1 2 3 8 16 19]`,
+  `3 = [5 6 4 12 13 7 11 0 1 2 3 8 21 16 19]`.
+- **Independent-oracle checks it satisfies:** `parse_sa_layouts` yields those two
+  ordered attr-id arrays.
+- **md5:** `3678d96bedd8fae56c0f93fddb15ee73`
+- **Consumed by:** `core/tests/sa.rs` (always-on, no env gate).
 
 ### `zdb` ground truth (the independent oracle values the tests assert against)
 
@@ -216,7 +276,36 @@ zdb -R -e -p /media/psf/tmp/zfs tpool 0:4002000:1000:r  # ZPL master micro-ZAP (
 zdb -R -e -p /media/psf/tmp/zfs tpool 0:401b000:1000:r  # ZPL dnode block objs 32-63 (LZ4)
 #   -> inflate, take obj 34 dnode blkptr[0], gather 112-B BPE payload, LZ4-inflate
 #      (4-byte BE prefix) to 512 B -> zfs_zap_micro_root.bin.
+
+# P3: SA metadata + file content fixtures. DVAs from `zdb -dddddd`.
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:401a000:1000:r  # ZPL dnode block objs 0-31 (LZ4)
+#   -> inflate to 16 KiB, slot 2 (off 1024) -> zfs_sa_file_dnode.bin (foo.txt, obj 2)
+#   ->                    slot 3 (off 1536) -> zfs_sa_dir_dnode.bin  (sub, obj 3)
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:0:600:r         # SA REGISTRY (obj 35) micro-ZAP, uncompressed -> zfs_sa_registry.bin
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:4018000:1000:r  # SA LAYOUTS (obj 36) fat-ZAP block 0 (header, LZ4)
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:4017000:1000:r  # SA LAYOUTS (obj 36) fat-ZAP block 1 (leaf, LZ4)
+#   -> LZ4-inflate each to 16 KiB, concatenate -> zfs_sa_layouts.bin (32 KiB).
 ```
+
+### P3 — SA / znode metadata + content ground truth (from `zdb -dddddd`, byte-verified)
+
+| object | zdb finding |
+|--------|-------------|
+| 2 `/foo.txt` | SA bonus (layout 3): mode 100644, size 20, gen 11, links 1, uid/gid 0, parent 34; content `hello zfs forensics\n` (sha256 below) |
+| 3 `/sub` | SA bonus: mode 40755, size 3, links 2, gen 11; directory ZAP `bar.txt = 128` |
+| 128 `/sub/bar.txt` | SA bonus: mode 100644, size 20, parent 3; content sha256 below |
+| 32 `SA_ATTRS` | SA master micro-ZAP: `REGISTRY = 35`, `LAYOUTS = 36` |
+| 35 `REGISTRY` | 22 attrs, each `[len:bswap:id]`; `ZPL_MODE = [8:0:5]`, `ZPL_ATIME = [16:0:0]`, … |
+| 36 `LAYOUTS` | `2 = [5 6 4 12 13 7 11 0 1 2 3 8 16 19]`, `3 = [5 6 4 12 13 7 11 0 1 2 3 8 21 16 19]` |
+
+Verified layout (against OpenZFS `sa_impl.h` + `zfs_znode.h`, cross-checked vs `zdb`):
+`sa_hdr_phys_t` = `sa_magic` u32 \@0 (`SA_MAGIC = 0x2F505A`), `sa_layout_info` u16
+\@4 where `SA_HDR_LAYOUT_NUM = BF32_GET(info,0,10)` and
+`SA_HDR_SIZE = BF32_GET_SB(info,10,6,3,0) = ((info>>10)&0x3f)<<3` bytes; packed
+attributes follow at `hdrsz`, each in registry order for the layout, sizes from
+the registry (u64 scalars; timestamps are `[u64 sec, u64 nsec]`). Legacy
+`znode_phys_t` (bonustype 17, 264 bytes): atime/mtime/ctime/crtime `[sec,nsec]`
+\@0/16/32/48, gen \@64, mode \@72, size \@80, parent \@88, links \@96.
 
 ### Content ground truth (for later file-read phases, not P0)
 

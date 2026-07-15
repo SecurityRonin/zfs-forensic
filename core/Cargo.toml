@@ -38,5 +38,11 @@ lz4_flex = { workspace = true }
 flate2 = { workspace = true }
 zstd = { workspace = true }
 
+[dev-dependencies]
+# The P3 file-content integration test hashes recovered bytes to reconcile
+# against the minted sha256 ground truth (Doer-Checker); sha2 is already a
+# runtime dep, declared here too so the separate integration-test crate links it.
+sha2 = { workspace = true }
+
 [lints]
 workspace = true
