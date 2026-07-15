@@ -50,6 +50,11 @@ use crate::bytes::{le_u64, Endian, Reader};
 /// translating a DVA offset to a raw byte position on the vdev.
 pub const BOOT_SKEW: u64 = 0x0040_0000;
 
+/// `BPE_PAYLOAD_SIZE` — bytes of inline payload an embedded blkptr carries in the
+/// three non-`blk_prop`/non-pad regions of the 128-byte pointer
+/// (`[0,48) ++ [56,88) ++ [96,128)` = 48 + 32 + 32).
+pub const BPE_PAYLOAD_SIZE: usize = 112;
+
 /// A Data Virtual Address: one ditto copy a block pointer records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Dva {
@@ -103,7 +108,7 @@ impl Dva {
 }
 
 /// A fully-decoded 128-byte block pointer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Blkptr {
     /// The three ditto DVAs (unused copies are all-zero — see [`Dva::is_empty`]).
     pub dvas: [Dva; 3],
@@ -136,9 +141,50 @@ pub struct Blkptr {
     pub embedded_lsize: u32,
     /// For an **embedded** blkptr: the inline physical size in bytes (`BPE_GET_PSIZE`).
     pub embedded_psize: u32,
+    /// For an **embedded** blkptr: the 112-byte inline payload gathered from the
+    /// three non-prop/non-pad regions of the 128-byte pointer
+    /// (`[0,48) ++ [56,88) ++ [96,128)`, `BPE_PAYLOAD_SIZE`). The first
+    /// [`Self::embedded_psize`] bytes are the (possibly compressed) block content.
+    pub embedded_payload: [u8; BPE_PAYLOAD_SIZE],
+}
+
+impl Default for Blkptr {
+    fn default() -> Self {
+        Blkptr {
+            dvas: [Dva::default(); 3],
+            lsize_raw: 0,
+            psize_raw: 0,
+            compression: 0,
+            embedded: false,
+            checksum: 0,
+            object_type: 0,
+            level: 0,
+            dedup: false,
+            byteorder: Endian::default(),
+            logical_birth: 0,
+            fill: 0,
+            checksum_words: [0; 4],
+            embedded_lsize: 0,
+            embedded_psize: 0,
+            embedded_payload: [0u8; BPE_PAYLOAD_SIZE],
+        }
+    }
 }
 
 impl Blkptr {
+    /// The (possibly compressed) inline payload of an **embedded** blkptr: the
+    /// first [`Self::embedded_psize`] bytes of [`Self::embedded_payload`]. Empty
+    /// for a non-embedded blkptr.
+    #[must_use]
+    pub fn embedded_data(&self) -> &[u8] {
+        if self.embedded {
+            let n = (self.embedded_psize as usize).min(BPE_PAYLOAD_SIZE);
+            &self.embedded_payload[..n]
+        } else {
+            &[]
+        }
+    }
+
     /// Logical size in bytes: `((lsize_raw) + 1) << 9`. For an embedded blkptr,
     /// this is [`Self::embedded_lsize`] instead.
     #[must_use]
@@ -193,6 +239,7 @@ impl Blkptr {
         let mut dvas = [Dva::default(); 3];
         let mut checksum_words = [0u64; 4];
         let (mut embedded_lsize, mut embedded_psize) = (0u32, 0u32);
+        let mut embedded_payload = [0u8; BPE_PAYLOAD_SIZE];
         let mut fill = 0u64;
         let mut logical_birth = 0u64;
 
@@ -200,6 +247,10 @@ impl Blkptr {
             // BPE_GET_LSIZE = BF64_GET_SB(prop, 0, 25, 0, 1); PSIZE = (25,7,0,1).
             embedded_lsize = ((prop & 0x01ff_ffff) as u32).saturating_add(1);
             embedded_psize = (((prop >> 25) & 0x7f) as u32).saturating_add(1);
+            // The 112-byte payload is gathered from the three regions of the
+            // 128-byte pointer that are not the blk_prop word (48..56) or the pad
+            // words (88..96): [0,48) ++ [56,88) ++ [96,128).
+            gather_bpe_payload(bp, &mut embedded_payload);
         } else {
             for (i, dva) in dvas.iter_mut().enumerate() {
                 *dva = Dva::parse(rd, bp, i * 16);
@@ -227,6 +278,20 @@ impl Blkptr {
             checksum_words,
             embedded_lsize,
             embedded_psize,
+            embedded_payload,
+        }
+    }
+}
+
+/// Gather the 112-byte `BPE_PAYLOAD` from the 128-byte embedded blkptr `bp` into
+/// `out`, copying `[0,48) ++ [56,88) ++ [96,128)` and zero-filling any region a
+/// truncated `bp` cannot supply (never panics/over-reads).
+fn gather_bpe_payload(bp: &[u8], out: &mut [u8; BPE_PAYLOAD_SIZE]) {
+    // (src_range, dst_start) for the three payload regions.
+    let regions: [(usize, usize, usize); 3] = [(0, 48, 0), (56, 88, 48), (96, 128, 80)];
+    for (start, end, dst) in regions {
+        if let Some(seg) = bp.get(start..end) {
+            out[dst..dst + (end - start)].copy_from_slice(seg);
         }
     }
 }
@@ -338,6 +403,31 @@ mod unit {
         assert_eq!(p.psize_bytes(), 4);
         // is_hole is false for embedded (data is inline).
         assert!(!p.is_hole());
+        // embedded_data() returns the first psize (4) bytes of the payload.
+        assert_eq!(p.embedded_data().len(), 4);
+    }
+
+    #[test]
+    fn embedded_data_is_empty_for_a_non_embedded_blkptr() {
+        let p = Blkptr::parse(&[0u8; 128], Endian::Little);
+        assert!(!p.embedded);
+        assert!(p.embedded_data().is_empty());
+    }
+
+    #[test]
+    fn embedded_payload_gathers_three_regions() {
+        // Mark bytes in each of the three payload regions and confirm they land
+        // contiguously in embedded_payload: [0,48) [56,88) [96,128) -> 0,48,80.
+        let mut bp = [0u8; 128];
+        let prop = 0x63u64 | (0x6f << 25) | (1u64 << 39) | (1u64 << 63); // psize 0x70=112
+        bp[48..56].copy_from_slice(&prop.to_le_bytes());
+        bp[0] = 0xA1; // region 1 start -> payload[0]
+        bp[56] = 0xB2; // region 2 start -> payload[48]
+        bp[96] = 0xC3; // region 3 start -> payload[80]
+        let p = Blkptr::parse(&bp, Endian::Little);
+        assert_eq!(p.embedded_payload[0], 0xA1);
+        assert_eq!(p.embedded_payload[48], 0xB2);
+        assert_eq!(p.embedded_payload[80], 0xC3);
     }
 
     #[test]

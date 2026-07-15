@@ -27,19 +27,23 @@ pub mod checksum;
 pub mod compress;
 mod dmu;
 mod dnode;
+mod dsl;
 mod error;
 mod label;
 mod nvlist;
 mod objset;
 mod read;
 mod uberblock;
+mod zap;
+mod zpl;
 
-pub use blkptr::{detect_blkptr_endian, Blkptr, Dva, BOOT_SKEW};
+pub use blkptr::{detect_blkptr_endian, Blkptr, Dva, BOOT_SKEW, BPE_PAYLOAD_SIZE};
 pub use bytes::{Endian, Reader};
 pub use checksum::ChecksumType;
 pub use compress::CompressType;
 pub use dmu::DmuType;
 pub use dnode::{Dnode, BLKPTR_SIZE, DNODE_CORE_SIZE, DNODE_SIZE};
+pub use dsl::{dsl_dataset_bp, dsl_dir_head_dataset};
 pub use error::ZfsError;
 pub use label::{
     active_uberblock, label_offsets, VdevLabel, LABEL_SIZE, NVLIST_OFFSET, NVLIST_SIZE,
@@ -51,6 +55,14 @@ pub use read::{
     mos_dnode, read_block, read_dnode_data, Block, MAX_BLOCK_SIZE, MAX_INDIRECT_LEVELS,
 };
 pub use uberblock::{BlkptrSummary, Uberblock, UBERBLOCK_MAGIC, UBERBLOCK_MIN_SHIFT, UB_MMP_MAGIC};
+pub use zap::{
+    read_zap_object, zap_list, zap_lookup, ZAP_LEAF_MAGIC, ZAP_MAGIC, ZBT_HEADER, ZBT_LEAF,
+    ZBT_MICRO,
+};
+pub use zpl::{
+    zpl_list_dir, zpl_master_root, zpl_objset, zpl_root_dir, ZPL_DIRENT_OBJ_MASK,
+    ZPL_MASTER_NODE_OBJ, ZPL_ROOT_NAME,
+};
 
 /// Parse a packed XDR nvlist config from a buffer beginning with the 4-byte
 /// packed header. Convenience re-export of [`nvlist::parse`].

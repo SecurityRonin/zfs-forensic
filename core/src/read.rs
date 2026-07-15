@@ -70,11 +70,15 @@ pub fn read_block(image: &[u8], bp: &Blkptr) -> Result<Block, ZfsError> {
     }
 
     // Embedded blkptr: the payload is inline in the blkptr words, not on disk.
-    // P1 exposes the sizes; the inline extraction (BPE payload words) is a later
-    // phase, so surface it as an explicit unsupported-embedded rather than a lie.
+    // Extract the (possibly compressed) inline bytes and decompress to LSIZE.
+    // An embedded block has no checksum (its integrity is the parent's).
     if bp.embedded {
-        return Err(ZfsError::EmbeddedBlkptr {
-            lsize: lsize as u64,
+        let comp = CompressType::from_raw(bp.compression);
+        let data = compress::decompress(comp, bp.embedded_data(), lsize)?;
+        return Ok(Block {
+            data,
+            checksum_valid: None,
+            dva_used: 0,
         });
     }
 
@@ -396,15 +400,22 @@ mod unit {
     }
 
     #[test]
-    fn read_block_embedded_is_flagged() {
+    fn read_block_embedded_uncompressed_returns_inline_payload() {
+        // An embedded blkptr with Off compression: the inline payload IS the
+        // logical block (no DVA, no disk read). read_block returns the first
+        // LSIZE bytes of the gathered 112-byte payload.
         let mut bp = Blkptr::default();
         bp.embedded = true;
-        bp.embedded_lsize = 40;
+        bp.embedded_lsize = 8; // lsize_bytes() == 8 for embedded
+        bp.embedded_psize = 8;
+        bp.compression = crate::compress::CompressType::Off.raw();
+        for (i, b) in bp.embedded_payload.iter_mut().enumerate().take(8) {
+            *b = i as u8;
+        }
         let img = vec![0u8; 16];
-        assert!(matches!(
-            read_block(&img, &bp),
-            Err(crate::ZfsError::EmbeddedBlkptr { .. })
-        ));
+        let block = read_block(&img, &bp).unwrap();
+        assert_eq!(block.data, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(block.checksum_valid, None);
     }
 
     #[test]

@@ -5,8 +5,9 @@ Single machine-index of the fleet corpus lives in
 detail. Cross-reference, do not duplicate.
 
 <!-- TODO(corpus-catalog): add these zfs-forensic entries (zfs_label0.bin,
-     zfs_mos_objset.bin, zfs_mos_l1_indirect_lz4.bin + the env-gated zfs.img) to
-     issen/docs/corpus-catalog.md when the P0/P1 work is folded into the fleet
+     zfs_mos_objset.bin, zfs_mos_l1_indirect_lz4.bin, zfs_zap_fat_objdir.bin,
+     zfs_zap_micro_master.bin, zfs_zap_micro_root.bin + the env-gated zfs.img) to
+     issen/docs/corpus-catalog.md when the P0/P1/P2 work is folded into the fleet
      catalog. -->
 
 ## Committed fixtures
@@ -61,6 +62,49 @@ detail. Cross-reference, do not duplicate.
 - **md5:** `2c6019af6aabb8d7c4d8c74064d2a4d1`
 - **Consumed by:** `core/tests/blkptr_io.rs` (always-on, no env gate).
 
+### `zfs_zap_fat_objdir.bin` (P2)
+
+- **Class:** `REAL-self` (Tier-2). The MOS **object directory** (object 1) — a
+  **fat-ZAP** — as the object's whole logical data: block 0 (the `zap_phys_t`
+  header + embedded pointer table) followed by block 1 (the `zap_leaf_phys_t`),
+  each 16 KiB, **decompressed** from LZ4 and concatenated to 32 KiB. Extracted via
+  the `zdb` oracle then inflated by the same LZ4 codec the reader uses:
+  `zdb -R -e -p /media/psf/tmp/zfs tpool 0:4008000:1000:r` (block 0) and
+  `0:4009000:1000:r` (block 1), each LZ4-decompressed to 16 KiB, concatenated.
+- **Independent-oracle checks it satisfies:** `zap_list` yields exactly the 15
+  entries `zdb -dddddd tpool 1` reports (`zap_magic` `0x2f52ab2ab`, `ZAP entries:
+  15`), including `root_dataset = 32`, `config = 61`, `creation_version = 5000`.
+- **md5:** `99fa6c8e0df7a4c8fef35f50324a9481`
+- **Consumed by:** `core/tests/zap.rs` (always-on, no env gate).
+
+### `zfs_zap_micro_master.bin` (P2)
+
+- **Class:** `REAL-self` (Tier-2). The ZPL **master node** (object 1 of the
+  `tpool` filesystem dataset) — a 512-byte **micro-ZAP** block (uncompressed).
+  Extracted with the `zdb` oracle:
+  `zdb -R -e -p /media/psf/tmp/zfs tpool 0:4002000:1000:r` (first 512 bytes).
+- **Independent-oracle checks it satisfies:** `zap_list` yields the 7 entries
+  `zdb -dddddd tpool/ 1` reports — `VERSION = 5`, `ROOT = 34`, `SA_ATTRS = 32`,
+  `DELETE_QUEUE = 33`, and the three normalization props (all 0).
+- **md5:** `9ba705d629a71acfb340c36f995258a5`
+- **Consumed by:** `core/tests/zap.rs` (always-on, no env gate).
+
+### `zfs_zap_micro_root.bin` (P2)
+
+- **Class:** `REAL-self` (Tier-2). The ZPL **root directory** (object 34 of the
+  `tpool` dataset) — a 512-byte **micro-ZAP**. In the pool this directory is
+  stored in an **embedded blkptr** (`EMBEDDED 200L/43P`, LZ4); this fixture is its
+  **decompressed** payload. Extracted by reading the ZPL meta-dnode L0 block
+  holding objects 32–63 (`zdb -R … 0:401b000:1000:r`, LZ4-inflate to 16 KiB),
+  taking object 34's dnode `blk_ptr[0]`, gathering the 112-byte BPE payload, and
+  LZ4-decompressing (4-byte BE prefix) to 512 bytes.
+- **Independent-oracle checks it satisfies:** `zap_list` yields the 2 entries
+  `zdb -dddddd tpool/ 34` reports — `foo.txt = 2` (raw value `0x8…0002`, dirent
+  type 8 = regular file) and `sub = 3` (raw `0x4…0003`, dirent type 4 = directory)
+  — the two minted files.
+- **md5:** `44d153bde208d45cd408b121918ba71f`
+- **Consumed by:** `core/tests/zap.rs` (always-on, no env gate).
+
 ### `zdb` ground truth (the independent oracle values the tests assert against)
 
 From `sudo zdb -l zfs.img` (top-level nvlist config):
@@ -96,6 +140,23 @@ From `sudo zdb -uuuuu -e -p /media/psf/tmp/zfs tpool` (active uberblock):
 
 The uberblock ring has 32 slots of 4096 bytes (`slot_size = 2^ashift = 2^12`),
 so the active slot index is `txg % 32 = 22`.
+
+### P2 — MOS → DSL → ZPL navigation (from `zdb -dddddd`, byte-verified)
+
+| step | object | zdb finding |
+|------|--------|-------------|
+| MOS object directory | 1 (fat-ZAP) | `root_dataset = 32` |
+| DSL directory | 32 (`dsl_dir_phys_t` bonus) | `dd_head_dataset_obj = 54`, `dd_child_dir_zapobj = 34` |
+| DSL dataset | 54 (`dsl_dataset_phys_t` bonus) | `ds_bp = <0:f000:1000>` → the ZPL objset |
+| ZPL master node | 1 (micro-ZAP) | `ROOT = 34`, `VERSION = 5`, `SA_ATTRS = 32` |
+| ZPL root directory | 34 (embedded micro-ZAP) | `foo.txt = 2` (reg file), `sub = 3` (directory) |
+
+Verified byte-offsets (all against `zdb`): `dsl_dir_phys_t.dd_head_dataset_obj`
+at bonus \@8; `dsl_dataset_phys_t.ds_bp` (a 128-byte `blkptr_t`) at bonus \@128;
+micro-ZAP `mzap_ent_phys_t` = `mze_value`\@0 / `mze_cd`\@8 / `mze_name[50]`\@14,
+64 bytes each; fat-ZAP leaf `ZAP_LEAF_ENTRY` chunk type 252, `ZAP_LEAF_ARRAY` 251,
+values stored big-endian; embedded-blkptr `BPE_PAYLOAD` = bytes `[0,48) ++ [56,88)
+++ [96,128)` of the 128-byte pointer, LZ4-framed with a 4-byte BE length prefix.
 
 ## Env-gated full image (NOT committed)
 
@@ -144,6 +205,17 @@ zdb -R -e -p /media/psf/tmp/zfs tpool 0:4025000:1000:r > zfs_mos_l1_indirect_lz4
 # 0:c015000  = rootbp DVA[0] (the MOS objset block, uncompressed).
 # 0:4025000  = the meta-dnode blkptr[0] DVA[0] (the LZ4 L1 indirect block);
 #              its byte offset = (meta-dnode blkptr[0].offset_sectors << 9).
+
+# P2: ZAP fixtures. zdb -R :r dumps the raw (compressed) block; the LZ4 inflate +
+# BPE-payload gather + concatenation are done in-code (the same codec the reader
+# uses). DVAs from `zdb -dddddd`:
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:4008000:1000:r  # MOS objdir fat-ZAP block 0 (header)
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:4009000:1000:r  # MOS objdir fat-ZAP block 1 (leaf)
+#   -> LZ4-inflate each to 16 KiB, concatenate -> zfs_zap_fat_objdir.bin (32 KiB).
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:4002000:1000:r  # ZPL master micro-ZAP (first 512 B) -> zfs_zap_micro_master.bin
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:401b000:1000:r  # ZPL dnode block objs 32-63 (LZ4)
+#   -> inflate, take obj 34 dnode blkptr[0], gather 112-B BPE payload, LZ4-inflate
+#      (4-byte BE prefix) to 512 B -> zfs_zap_micro_root.bin.
 ```
 
 ### Content ground truth (for later file-read phases, not P0)
