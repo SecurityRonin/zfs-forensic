@@ -218,7 +218,7 @@ micro-ZAP `mzap_ent_phys_t` = `mze_value`\@0 / `mze_cd`\@8 / `mze_name[50]`\@14,
 values stored big-endian; embedded-blkptr `BPE_PAYLOAD` = bytes `[0,48) ++ [56,88)
 ++ [96,128)` of the 128-byte pointer, LZ4-framed with a 4-byte BE length prefix.
 
-## Env-gated full image (NOT committed)
+## Env-gated full images (NOT committed)
 
 ### `zfs.img` (512 MiB) — pointed to by `ZFS_ORACLE_IMG`
 
@@ -228,6 +228,61 @@ values stored big-endian; embedded-blkptr `BPE_PAYLOAD` = bytes `[0,48) ++ [56,8
 - **md5:** `c21d7810e706342321e5ee2a3121c676`
 - Extract a working copy to `/tmp` (never under `~/src`); set
   `ZFS_ORACLE_IMG=/tmp/zfs/zfs.img`.
+
+### `zfs_snap.img` (256 MiB) — pointed to by `ZFS_SNAP_ORACLE_IMG` (F-CARVE oracle)
+
+- **Class:** `REAL-self` (Tier-2). A **snapshot-deletion** pool minted to prove
+  `zfs-forensic`'s CoW deleted-file recovery (F-CARVE). Gitignored (256 MiB);
+  the `forensic/tests/carve.rs` tests skip cleanly when the env var is unset.
+- **md5:** `38af336fbb188700b8720819946fc527`
+- **What it is:** an OpenZFS pool `dtpool` (ashift 12, compression off) in which
+  `/secret.txt` (36 bytes) was written, the snapshot `dtpool@snap1` taken, and
+  then `/secret.txt` `rm`'d + synced. `/keep.txt` was written and never deleted.
+- **Ground truth (the recovery gate), recorded pre-delete:**
+  - `sha256(/secret.txt) = 312799a19921d2f13936c837d165496afa8775be3dd1967e9128e4e41f5c7bcd`
+  - `sha256(/keep.txt)   = 15fee6664fa150228e3d3d4f8516655c9f748995f8bfecda430f2c2ad23a7411`
+- **Independent-oracle (`zdb`) structural checks:** `zdb -d` reports three
+  datasets — `mos [META] ID 0`, `dtpool [ZPL] ID 54` (7 objects, live), and
+  `dtpool@snap1 [ZPL] ID 86` (8 objects, the snapshot). `zdb -dddddd
+  dtpool@snap1` shows the snapshot's root dir (object 34) still lists
+  `secret.txt = 2` and `keep.txt = 3`, while live `dtpool`'s root lists only
+  `keep.txt`. The deleted file is object **2** (`/secret.txt`, SA bonus, size
+  36, mode 100600, parent 34; content at DVA `0:400d000:1000`).
+- **DSL traversal the recovery follows** (all `zdb -dddd`-verified):
+  MOS object directory (obj 1) `root_dataset = 32` → DSL dir 32
+  `dd_head_dataset_obj = 54` → head DSL dataset 54 bonus `ds_prev_snap_obj = 86`
+  → snapshot DSL dataset 86 bonus `ds_bp = <0:2012000:1000>` → the snapshot's
+  ZPL objset (retaining the deleted file). `ds_prev_snap_obj` is
+  `dsl_dataset_phys_t` bonus offset 8; `ds_bp` is bonus offset 128.
+- Extract a working copy to `/tmp` (never under `~/src`); set
+  `ZFS_SNAP_ORACLE_IMG=/tmp/zfs/zfs_snap.img`.
+
+**Uberblock-history (best-effort) note:** the alternate F-CARVE path — walking
+an OLDER uberblock in the 128-slot ring to reach a previous txg's MOS/ZPL state —
+is inherently *state-dependent*: it recovers a deleted file only while the old
+tree blocks remain un-overwritten by CoW, so it returns nothing (never a
+fabricated result) once they are reused. The **snapshot** path is the reliable
+one (a snapshot pins the pre-delete blocks against reuse), which is why the
+recovery gate above validates the snapshot path.
+
+### Mint command (snapshot-deletion oracle — verbatim)
+
+```bash
+IMG=/media/psf/tmp/zfs/zfs_snap.img
+zpool destroy dtpool 2>/dev/null || true; rm -f "$IMG"
+truncate -s 256M "$IMG"
+zpool create -o ashift=12 -O compression=off -O atime=off dtpool "$IMG"
+printf 'deleted zfs forensic secret payload\n' > /dtpool/secret.txt
+printf 'this file stays alive\n'                > /dtpool/keep.txt
+sync
+sha256sum /dtpool/secret.txt /dtpool/keep.txt   # pre-delete ground truth
+zfs snapshot dtpool@snap1                        # PIN the pre-delete state
+rm -f /dtpool/secret.txt ; sync                  # delete from live
+zpool export dtpool
+# independent oracle (zdb): datasets incl. the snapshot, and the retained file
+zdb -d     -e -p /media/psf/tmp/zfs dtpool
+zdb -dddddd -e -p /media/psf/tmp/zfs dtpool@snap1   # root dir still lists secret.txt = 2
+```
 
 ## Mint commands (verbatim — reproduce the corpus)
 
