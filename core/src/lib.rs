@@ -44,7 +44,7 @@ pub use checksum::ChecksumType;
 pub use compress::CompressType;
 pub use dmu::DmuType;
 pub use dnode::{Dnode, BLKPTR_SIZE, DNODE_CORE_SIZE, DNODE_SIZE};
-pub use dsl::{dsl_dataset_bp, dsl_dir_head_dataset};
+pub use dsl::{dsl_dataset_bp, dsl_dataset_prev_snap, dsl_dir_head_dataset};
 pub use error::ZfsError;
 pub use label::{
     active_uberblock, label_offsets, VdevLabel, LABEL_SIZE, NVLIST_OFFSET, NVLIST_SIZE,

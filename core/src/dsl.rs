@@ -39,6 +39,9 @@ use crate::dnode::Dnode;
 
 /// `dsl_dir_phys_t.dd_head_dataset_obj` bonus offset.
 const DD_HEAD_DATASET_OBJ: usize = 8;
+/// `dsl_dataset_phys_t.ds_prev_snap_obj` bonus offset — the object id of the
+/// previous (older) snapshot dataset in this dataset's snapshot chain.
+const DS_PREV_SNAP_OBJ: usize = 8;
 /// `dsl_dataset_phys_t.ds_bp` bonus offset (a full 128-byte `blkptr_t`).
 const DS_BP_OFFSET: usize = 128;
 
@@ -51,6 +54,19 @@ const DS_BP_OFFSET: usize = 128;
 #[must_use]
 pub fn dsl_dir_head_dataset(dnode: &Dnode) -> u64 {
     le_u64(&dnode.bonus, DD_HEAD_DATASET_OBJ)
+}
+
+/// The previous-snapshot object id from a DSL dataset dnode's bonus
+/// (`dsl_dataset_phys_t.ds_prev_snap_obj`) — the older snapshot dataset in this
+/// dataset's snapshot chain, or `0` when there is none (the origin).
+///
+/// Following this field from the head dataset walks the linked list of snapshots
+/// newest → oldest; each snapshot's [`dsl_dataset_bp`] points at a ZPL objset
+/// that pins the filesystem state at the snapshot's creation. Returns `0` when
+/// the bonus is too short to hold the field (a corrupt or non-DSL-dataset dnode).
+#[must_use]
+pub fn dsl_dataset_prev_snap(dnode: &Dnode) -> u64 {
+    le_u64(&dnode.bonus, DS_PREV_SNAP_OBJ)
 }
 
 /// The `ds_bp` block pointer from a DSL dataset dnode's bonus
@@ -71,7 +87,7 @@ pub fn dsl_dataset_bp(dnode: &Dnode) -> Blkptr {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod unit {
-    use super::{dsl_dataset_bp, dsl_dir_head_dataset};
+    use super::{dsl_dataset_bp, dsl_dataset_prev_snap, dsl_dir_head_dataset};
     use crate::bytes::Endian;
     use crate::dnode::Dnode;
 
@@ -99,6 +115,20 @@ mod unit {
     fn head_dataset_obj_zero_when_bonus_short() {
         let dnode = dnode_with_bonus(&[0u8; 4]);
         assert_eq!(dsl_dir_head_dataset(&dnode), 0);
+    }
+
+    #[test]
+    fn prev_snap_obj_reads_bonus_field() {
+        let mut bonus = vec![0u8; 320];
+        bonus[8..16].copy_from_slice(&86u64.to_le_bytes());
+        let dnode = dnode_with_bonus(&bonus);
+        assert_eq!(dsl_dataset_prev_snap(&dnode), 86);
+    }
+
+    #[test]
+    fn prev_snap_obj_zero_when_bonus_short() {
+        let dnode = dnode_with_bonus(&[0u8; 4]);
+        assert_eq!(dsl_dataset_prev_snap(&dnode), 0);
     }
 
     #[test]

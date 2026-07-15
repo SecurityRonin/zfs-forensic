@@ -1,4 +1,4 @@
-//! F-CARVE — CoW deleted-file recovery integration tests.
+//! F-CARVE — `CoW` deleted-file recovery integration tests.
 //!
 //! ZFS is copy-on-write: a **snapshot** pins the pre-delete state of a dataset,
 //! so a file deleted from the live filesystem survives, byte-for-byte, in the
@@ -78,5 +78,5 @@ fn malformed_image_recovers_nothing_without_panicking() {
     // panicking.
     assert!(recover_deleted(&[]).is_empty());
     assert!(recover_deleted(&[0u8; 4096]).is_empty());
-    assert!(recover_deleted(&[0xffu8; 512 * 1024]).is_empty());
+    assert!(recover_deleted(&vec![0xffu8; 512 * 1024]).is_empty());
 }
