@@ -22,7 +22,7 @@ exclude = [
 ]
 
 [dependencies]
-zfs-core = { workspace = true }
+zfs-forensic-core = { workspace = true }
 # ZFS structure knowledge + the shared report model (Severity/Observation).
 forensicnomicon = { workspace = true }
 

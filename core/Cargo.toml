@@ -1,5 +1,5 @@
 [package]
-name = "zfs-core"
+name = "zfs-forensic-core"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 description = "Pure-Rust from-scratch ZFS on-disk reader — vdev label, XDR nvlist config, and endian-adaptive uberblock array, over any byte source"
 repository.workspace = true
 homepage.workspace = true
-documentation = "https://docs.rs/zfs-core"
+documentation = "https://docs.rs/zfs-forensic-core"
 readme.workspace = true
 authors.workspace = true
 keywords = ["forensics", "zfs", "filesystem", "dfir", "parser"]
@@ -27,9 +27,12 @@ exclude = [
 ]
 
 # The bare `zfs` crate name (ticki/zfs, 2016, abandoned) AND `zfs-core`
-# (libzfs_core FFI, 2019) are both taken on crates.io, so we do NOT claim a
-# `[lib] name = "zfs"`; the import path is `zfs_core`. See tests/data/README.md
-# and the repo README for the publish-time name decision.
+# (libzfs_core FFI, 2019) are both taken on crates.io. Per the fleet naming
+# grammar's "<x>-core-taken" rule, the reader publishes under the <repo>-core
+# form `zfs-forensic-core` (mirroring browser-forensic-core), keeping the import
+# path `zfs_core` via [lib] name so consumers are unaffected.
+[lib]
+name = "zfs_core"
 
 [dependencies]
 thiserror = { workspace = true }

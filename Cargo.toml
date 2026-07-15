@@ -19,7 +19,7 @@ readme = "README.md"
 # members write `dep.workspace = true`. The inter-crate `zfs-core` version lives
 # here too, so a bump touches one line instead of every member.
 [workspace.dependencies]
-zfs-core = { path = "core", version = "0.1.0" }
+zfs-forensic-core = { path = "core", version = "0.1.0" }
 forensicnomicon = "1"
 thiserror = "2"
 # P1 block I/O decode/verify stack (batteries-included — no default-features
