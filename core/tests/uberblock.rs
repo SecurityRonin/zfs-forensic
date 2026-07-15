@@ -42,11 +42,11 @@ fn rootbp_exposes_the_mos_objset_pointer_matching_zdb() {
     // zdb DVA offset 0xc015000 bytes = 393384 sectors.
     assert_eq!(
         dva0.offset_sectors,
-        0xc015000 / 512,
+        0x0c01_5000 / 512,
         "DVA[0] offset (sectors)"
     );
     // physical = (offset << 9) + 0x400000 boot skew.
-    assert_eq!(dva0.physical_byte_offset(), 0xc015000 + 0x400000);
+    assert_eq!(dva0.physical_byte_offset(), 0x0c01_5000 + 0x0040_0000);
     // Second and third ditto copies are present (triple copies for MOS).
     assert!(!bp.dvas[1].is_empty(), "DVA[1] present (ditto)");
     assert!(!bp.dvas[2].is_empty(), "DVA[2] present (ditto)");

@@ -104,8 +104,8 @@ impl VdevLabel {
         let ashift = config
             .vdev_tree()
             .map(|v| v.ashift)
-            .filter(|&a| (UBERBLOCK_MIN_SHIFT as u64..=16).contains(&a))
-            .unwrap_or(UBERBLOCK_MIN_SHIFT as u64);
+            .filter(|&a| (u64::from(UBERBLOCK_MIN_SHIFT)..=16).contains(&a))
+            .unwrap_or(u64::from(UBERBLOCK_MIN_SHIFT));
         let slot_size = 1usize << ashift.max(u64::from(UBERBLOCK_MIN_SHIFT));
         let slot_count = UBERBLOCK_RING_SIZE / slot_size;
 
@@ -153,4 +153,59 @@ pub fn active_uberblock(
         }
     }
     best
+}
+
+#[cfg(test)]
+mod unit {
+    use super::{active_uberblock, label_offsets, LABEL_SIZE};
+    use crate::uberblock::UBERBLOCK_MAGIC;
+
+    #[test]
+    fn label_offsets_front_and_back() {
+        let size = 8 * LABEL_SIZE as u64;
+        let (front, back) = label_offsets(size);
+        assert_eq!(front, [0, LABEL_SIZE as u64]);
+        assert_eq!(
+            back,
+            Some([size - 2 * LABEL_SIZE as u64, size - LABEL_SIZE as u64])
+        );
+    }
+
+    #[test]
+    fn label_offsets_no_back_when_too_small() {
+        let (_front, back) = label_offsets(3 * LABEL_SIZE as u64);
+        assert!(back.is_none());
+    }
+
+    #[test]
+    fn active_uberblock_none_on_empty_ring() {
+        let ring = [0u8; 4096];
+        assert!(active_uberblock(&ring, 1024, 4).is_none());
+    }
+
+    #[test]
+    fn active_uberblock_picks_highest_txg() {
+        // Two slots of 1024 bytes: slot 0 txg=3, slot 1 txg=9.
+        let mut ring = vec![0u8; 2048];
+        for (slot, txg) in [(0usize, 3u64), (1usize, 9u64)] {
+            let base = slot * 1024;
+            ring[base..base + 8].copy_from_slice(&UBERBLOCK_MAGIC.to_le_bytes());
+            ring[base + 16..base + 24].copy_from_slice(&txg.to_le_bytes());
+        }
+        let (ub, idx) = active_uberblock(&ring, 1024, 2).unwrap();
+        assert_eq!(ub.txg, 9);
+        assert_eq!(idx, 1);
+    }
+
+    #[test]
+    fn active_uberblock_breaks_when_slot_exceeds_ring() {
+        // slot_count claims 4 slots but the ring only holds ~1 — the `get`
+        // guard breaks the scan rather than reading out of range.
+        let mut ring = vec![0u8; 1100];
+        ring[0..8].copy_from_slice(&UBERBLOCK_MAGIC.to_le_bytes());
+        ring[16..24].copy_from_slice(&2u64.to_le_bytes());
+        let (ub, idx) = active_uberblock(&ring, 1024, 4).unwrap();
+        assert_eq!(ub.txg, 2);
+        assert_eq!(idx, 0);
+    }
 }

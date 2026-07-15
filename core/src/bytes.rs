@@ -168,3 +168,63 @@ impl Reader {
         }
     }
 }
+
+#[cfg(test)]
+mod unit {
+    use super::{
+        be_u16, be_u32, be_u64, le_u16, le_u32, le_u64, u8_at, xdr_i32, xdr_u64, Endian, Reader,
+    };
+
+    #[test]
+    fn little_endian_readers_decode_in_range() {
+        let d = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        assert_eq!(le_u16(&d, 0), 0x0201);
+        assert_eq!(le_u32(&d, 0), 0x0403_0201);
+        assert_eq!(le_u64(&d, 0), 0x0807_0605_0403_0201);
+    }
+
+    #[test]
+    fn big_endian_readers_decode_in_range() {
+        let d = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        assert_eq!(be_u16(&d, 0), 0x0102);
+        assert_eq!(be_u32(&d, 0), 0x0102_0304);
+        assert_eq!(be_u64(&d, 0), 0x0102_0304_0506_0708);
+        assert_eq!(u8_at(&d, 3), 0x04);
+    }
+
+    #[test]
+    fn xdr_readers_are_big_endian() {
+        let d = [0x00, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x01];
+        assert_eq!(xdr_i32(&d, 0), 42);
+        assert_eq!(xdr_u64(&d, 0), 0x0000_002a_0000_0001);
+    }
+
+    #[test]
+    fn readers_yield_zero_out_of_range() {
+        assert_eq!(le_u16(&[0x12], 0), 0);
+        assert_eq!(le_u32(&[0, 0, 0], 0), 0);
+        assert_eq!(le_u64(&[0, 0, 0, 0, 0, 0, 0], 0), 0);
+        assert_eq!(be_u16(&[0x12], 0), 0);
+        assert_eq!(be_u32(&[0, 0, 0], 0), 0);
+        assert_eq!(be_u64(&[0, 0, 0, 0, 0, 0, 0], 0), 0);
+        assert_eq!(xdr_i32(&[0, 0], 0), 0);
+        assert_eq!(xdr_u64(&[0, 0], 0), 0);
+        assert_eq!(u8_at(&[], 0), 0);
+        assert_eq!(u8_at(&[0xAA], 5), 0);
+    }
+
+    #[test]
+    fn reader_reads_in_selected_byte_order() {
+        let d = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let le = Reader::new(Endian::Little);
+        assert_eq!(le.endian(), Endian::Little);
+        assert_eq!(le.u16(&d, 0), 0x0201);
+        assert_eq!(le.u32(&d, 0), 0x0403_0201);
+        assert_eq!(le.u64(&d, 0), 0x0807_0605_0403_0201);
+        let be = Reader::new(Endian::Big);
+        assert_eq!(be.endian(), Endian::Big);
+        assert_eq!(be.u16(&d, 0), 0x0102);
+        assert_eq!(be.u32(&d, 0), 0x0102_0304);
+        assert_eq!(be.u64(&d, 0), 0x0102_0304_0506_0708);
+    }
+}

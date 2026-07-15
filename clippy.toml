@@ -5,5 +5,10 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 
-# Product/format names that look like code identifiers to doc_markdown.
-doc-valid-idents = ["ZFS", "OpenZFS", "OuroBoros", "XDR", "nvlist", "nvpair", "vdev", "uberblock", "blkptr", "DVA", "MOS", "ashift", "asize", "txg", "fletcher2", "fletcher4", "SHA-256", "OpenZFS"]
+# Product/format names + unit abbreviations that look like code identifiers to
+# doc_markdown but are legitimate prose here.
+doc-valid-idents = [
+    "ZFS", "OpenZFS", "OuroBoros", "XDR", "MOS", "DVA", "SPARC",
+    "KiB", "MiB", "GiB", "SHA-256", "fletcher2", "fletcher4",
+    "x86_64", "aarch64",
+]

@@ -154,10 +154,9 @@ pub fn parse(data: &[u8]) -> Result<NvList, ZfsError> {
             have: data.len(),
         });
     }
-    // P0 STUB (RED): body decoding not yet implemented — returns an empty list
-    // so the oracle assertions fail. GREEN replaces this with `parse_body`.
-    let _ = parse_body; // keep the helper referenced until GREEN wires it in
-    Ok(NvList::default())
+    // The XDR body follows the 4-byte packed header (encoding, endian, 2 rsvd).
+    let (list, _consumed) = parse_body(data, 4, 0)?;
+    Ok(list)
 }
 
 /// Parse an nvlist body (version + nvflag + nvpairs) starting at `off`.
@@ -190,8 +189,8 @@ fn parse_body(data: &[u8], off: usize, depth: usize) -> Result<(NvList, usize), 
         if encoded_size < 0 {
             return Err(ZfsError::NvlistBomb {
                 field: "encoded_size",
-                value: encoded_size.unsigned_abs() as u64,
-                cap: i32::MAX as u64,
+                value: u64::from(encoded_size.unsigned_abs()),
+                cap: u64::from(i32::MAX.unsigned_abs()),
             });
         }
         let pair_start = cur;
@@ -247,11 +246,11 @@ fn read_xdr_string(
     if len < 0 {
         return Err(ZfsError::NvlistBomb {
             field,
-            value: len.unsigned_abs() as u64,
+            value: u64::from(len.unsigned_abs()),
             cap,
         });
     }
-    let len = len as u64;
+    let len = u64::from(len.unsigned_abs());
     if len > cap {
         return Err(ZfsError::NvlistBomb {
             field,
@@ -275,4 +274,240 @@ fn read_xdr_string(
     let padded = (len + 3) & !3;
     let next = start.saturating_add(padded);
     Ok((String::from_utf8_lossy(raw).into_owned(), next))
+}
+
+#[cfg(test)]
+mod unit {
+    use super::{parse, NvList, NvValue, VdevTree};
+    use crate::error::ZfsError;
+
+    /// A minimal packed XDR nvlist: header + version/nvflag + one uint64 pair
+    /// named `n` + terminator. Encodes big-endian throughout.
+    fn one_u64(name: &str, val: u64) -> Vec<u8> {
+        let mut b = vec![0x01, 0x01, 0x00, 0x00]; // XDR header
+        b.extend_from_slice(&0i32.to_be_bytes()); // nvl_version
+        b.extend_from_slice(&1u32.to_be_bytes()); // nvl_nvflag
+                                                  // nvpair: encoded_size, decoded_size, name (xdr string), type, nelem, value
+        let name_bytes = name.as_bytes();
+        let padded = (name_bytes.len() + 3) & !3;
+        let mut pair = Vec::new();
+        pair.extend_from_slice(&(name_bytes.len() as i32).to_be_bytes());
+        pair.extend_from_slice(name_bytes);
+        pair.resize(4 + padded, 0);
+        pair.extend_from_slice(&8i32.to_be_bytes()); // DATA_TYPE_UINT64
+        pair.extend_from_slice(&1i32.to_be_bytes()); // nelem
+        pair.extend_from_slice(&val.to_be_bytes());
+        let encoded = 8 + pair.len();
+        b.extend_from_slice(&(encoded as i32).to_be_bytes());
+        b.extend_from_slice(&(encoded as i32).to_be_bytes());
+        b.extend_from_slice(&pair);
+        b.extend_from_slice(&0i32.to_be_bytes()); // terminator encoded_size
+        b.extend_from_slice(&0i32.to_be_bytes()); // terminator decoded_size
+        b
+    }
+
+    #[test]
+    fn parses_a_single_u64_pair() {
+        let buf = one_u64("answer", 42);
+        let nv = parse(&buf).unwrap();
+        assert_eq!(nv.get_u64("answer"), Some(42));
+        assert_eq!(nv.pairs().len(), 1);
+    }
+
+    #[test]
+    fn bad_encoding_is_rejected_with_the_byte() {
+        let buf = [0x02, 0x01, 0x00, 0x00, 0, 0, 0, 0];
+        assert_eq!(
+            parse(&buf),
+            Err(ZfsError::BadNvlistEncoding {
+                encoding: 0x02,
+                offset: 0
+            })
+        );
+    }
+
+    #[test]
+    fn header_shorter_than_four_bytes_is_truncated() {
+        let buf = [0x01, 0x01]; // right encoding byte, too short
+        assert!(matches!(parse(&buf), Err(ZfsError::Truncated { .. })));
+    }
+
+    #[test]
+    fn empty_buffer_reports_zero_encoding() {
+        // u8_at yields 0 out of range, so an empty buffer reads encoding 0.
+        assert!(matches!(
+            parse(&[]),
+            Err(ZfsError::BadNvlistEncoding { encoding: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn oversized_name_length_is_capped() {
+        let mut b = vec![0x01, 0x01, 0x00, 0x00];
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&1u32.to_be_bytes());
+        b.extend_from_slice(&64i32.to_be_bytes()); // encoded_size
+        b.extend_from_slice(&64i32.to_be_bytes()); // decoded_size
+        b.extend_from_slice(&1_000_000i32.to_be_bytes()); // name len — bomb
+        b.resize(256, 0);
+        assert!(matches!(
+            parse(&b),
+            Err(ZfsError::NvlistBomb {
+                field: "nvpair name",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn negative_name_length_is_rejected() {
+        let mut b = vec![0x01, 0x01, 0x00, 0x00];
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&1u32.to_be_bytes());
+        b.extend_from_slice(&64i32.to_be_bytes());
+        b.extend_from_slice(&64i32.to_be_bytes());
+        b.extend_from_slice(&(-1i32).to_be_bytes()); // negative len
+        b.resize(256, 0);
+        assert!(matches!(parse(&b), Err(ZfsError::NvlistBomb { .. })));
+    }
+
+    #[test]
+    fn negative_encoded_size_is_rejected() {
+        let mut b = vec![0x01, 0x01, 0x00, 0x00];
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&1u32.to_be_bytes());
+        b.extend_from_slice(&(-1i32).to_be_bytes()); // negative encoded_size
+        b.resize(64, 0);
+        assert!(matches!(
+            parse(&b),
+            Err(ZfsError::NvlistBomb {
+                field: "encoded_size",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn unknown_type_is_skipped_by_encoded_size() {
+        // A pair of an unhandled type (e.g. DATA_TYPE_BOOLEAN=1) is skipped; a
+        // following uint64 pair still decodes.
+        let mut b = vec![0x01, 0x01, 0x00, 0x00];
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&1u32.to_be_bytes());
+        // unknown-type pair: name "x", type 1, nelem 0
+        let mut p = Vec::new();
+        p.extend_from_slice(&1i32.to_be_bytes()); // name len
+        p.extend_from_slice(b"x\0\0\0"); // padded
+        p.extend_from_slice(&1i32.to_be_bytes()); // DATA_TYPE_BOOLEAN
+        p.extend_from_slice(&0i32.to_be_bytes()); // nelem
+        let enc = 8 + p.len();
+        b.extend_from_slice(&(enc as i32).to_be_bytes());
+        b.extend_from_slice(&(enc as i32).to_be_bytes());
+        b.extend_from_slice(&p);
+        // then a normal uint64 pair
+        let tail = one_u64("k", 7);
+        b.extend_from_slice(&tail[12..]); // skip its header+version+nvflag
+        let nv = parse(&b).unwrap();
+        assert_eq!(nv.get_u64("k"), Some(7));
+        assert!(nv.get("x").is_none());
+    }
+
+    #[test]
+    fn typed_getters_return_none_on_mismatch() {
+        let nv = parse(&one_u64("n", 3)).unwrap();
+        assert!(nv.get_str("n").is_none()); // it is a u64, not a string
+        assert!(nv.get_nvlist("n").is_none());
+        assert!(nv.get_u64("absent").is_none());
+        assert!(nv.get_str("absent").is_none());
+        assert!(nv.get_nvlist("absent").is_none());
+        assert!(nv.vdev_tree().is_none());
+    }
+
+    #[test]
+    fn vdev_tree_defaults_when_fields_absent() {
+        let vt = VdevTree::from_nvlist(&NvList::default());
+        assert_eq!(vt, VdevTree::default());
+        assert_eq!(vt.vdev_type, "");
+    }
+
+    #[test]
+    fn nvvalue_equality() {
+        assert_eq!(NvValue::U64(1), NvValue::U64(1));
+        assert_ne!(NvValue::U64(1), NvValue::Str("1".into()));
+    }
+
+    /// Serialize one nvpair (name, big-endian type, value bytes) into `out`.
+    fn pair(out: &mut Vec<u8>, name: &[u8], data_type: i32, value: &[u8]) {
+        let padded = (name.len() + 3) & !3;
+        let mut p = Vec::new();
+        p.extend_from_slice(&(name.len() as i32).to_be_bytes());
+        p.extend_from_slice(name);
+        p.resize(4 + padded, 0);
+        p.extend_from_slice(&data_type.to_be_bytes());
+        p.extend_from_slice(&1i32.to_be_bytes()); // nelem
+        p.extend_from_slice(value);
+        let enc = 8 + p.len();
+        out.extend_from_slice(&(enc as i32).to_be_bytes()); // encoded_size
+        out.extend_from_slice(&(enc as i32).to_be_bytes()); // decoded_size
+        out.extend_from_slice(&p);
+    }
+
+    #[test]
+    fn excessive_nesting_depth_is_capped() {
+        // Build a chain of nested NVLIST pairs deeper than MAX_DEPTH (16). Each
+        // nested value is a body (version + nvflag + child + terminator).
+        fn nested_value(remaining: usize) -> Vec<u8> {
+            let mut body = Vec::new();
+            body.extend_from_slice(&0i32.to_be_bytes()); // nvl_version
+            body.extend_from_slice(&1u32.to_be_bytes()); // nvl_nvflag
+            if remaining > 0 {
+                let child = nested_value(remaining - 1);
+                pair(&mut body, b"n", 19, &child); // DATA_TYPE_NVLIST
+            }
+            body.extend_from_slice(&0i32.to_be_bytes()); // terminator
+            body.extend_from_slice(&0i32.to_be_bytes());
+            body
+        }
+        let mut buf = vec![0x01, 0x01, 0x00, 0x00]; // XDR header
+        buf.extend_from_slice(&nested_value(20)); // 20 > MAX_DEPTH
+        assert!(matches!(
+            parse(&buf),
+            Err(ZfsError::NvlistBomb { field: "depth", .. })
+        ));
+    }
+
+    #[test]
+    fn pair_flush_with_the_buffer_at_the_end_returns_what_decoded() {
+        // One valid uint64 pair, then the buffer ends exactly at the pair
+        // boundary (no terminator) — the decoder returns the pair it recovered
+        // rather than looping or reading past the end.
+        let mut buf = vec![0x01, 0x01, 0x00, 0x00];
+        buf.extend_from_slice(&0i32.to_be_bytes()); // nvl_version
+        buf.extend_from_slice(&1u32.to_be_bytes()); // nvl_nvflag
+        pair(&mut buf, b"only", 8, &99u64.to_be_bytes());
+        // No terminator appended: `cur` lands at `data.len()` after the pair.
+        let nv = parse(&buf).unwrap();
+        assert_eq!(nv.get_u64("only"), Some(99));
+    }
+
+    #[test]
+    fn too_many_pairs_is_capped() {
+        // MAX_PAIRS+1 tiny uint64 pairs with no terminator: the loop runs
+        // MAX_PAIRS times without hitting a terminator or the end, then the
+        // pair-count bomb fires.
+        let mut buf = vec![0x01, 0x01, 0x00, 0x00];
+        buf.extend_from_slice(&0i32.to_be_bytes()); // nvl_version
+        buf.extend_from_slice(&1u32.to_be_bytes()); // nvl_nvflag
+        for _ in 0..=super::MAX_PAIRS {
+            pair(&mut buf, b"k", 8, &0u64.to_be_bytes()); // DATA_TYPE_UINT64
+        }
+        // No terminator; buffer holds all pairs so `cur < data.len()` throughout.
+        assert!(matches!(
+            parse(&buf),
+            Err(ZfsError::NvlistBomb {
+                field: "pair_count",
+                ..
+            })
+        ));
+    }
 }

@@ -167,18 +167,21 @@ impl Uberblock {
     /// [`UBERBLOCK_MAGIC`] (an empty or non-uberblock slot).
     #[must_use]
     pub fn parse(slot: &[u8]) -> Option<Self> {
-        // P0 STUB (RED): field decode + endian detection not yet implemented, so
-        // every slot reports "not an uberblock" and the oracle assertions fail.
-        // GREEN detects the magic, sets the byte order, and reads the fields.
-        let _ = (slot, detect_endian, BlkptrSummary::parse);
-        let _ = (
-            OFF_VERSION,
-            OFF_TXG,
-            OFF_GUID_SUM,
-            OFF_TIMESTAMP,
-            OFF_ROOTBP,
-        );
-        None
+        let endian = detect_endian(slot)?;
+        let rd = Reader::new(endian);
+        let rootbp = slot
+            .get(OFF_ROOTBP..OFF_ROOTBP + 128)
+            .map(|bp| BlkptrSummary::parse(rd, bp))
+            .unwrap_or_default();
+        Some(Uberblock {
+            endian,
+            magic: UBERBLOCK_MAGIC,
+            version: rd.u64(slot, OFF_VERSION),
+            txg: rd.u64(slot, OFF_TXG),
+            guid_sum: rd.u64(slot, OFF_GUID_SUM),
+            timestamp: rd.u64(slot, OFF_TIMESTAMP),
+            rootbp,
+        })
     }
 }
 
@@ -194,5 +197,82 @@ pub fn detect_endian(slot: &[u8]) -> Option<Endian> {
         Some(Endian::Big)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod unit {
+    use super::{detect_endian, Dva, Uberblock, UBERBLOCK_MAGIC};
+    use crate::bytes::Endian;
+
+    #[test]
+    fn detect_endian_little_big_and_none() {
+        let mut le = [0u8; 8];
+        le.copy_from_slice(&UBERBLOCK_MAGIC.to_le_bytes());
+        assert_eq!(detect_endian(&le), Some(Endian::Little));
+        let mut be = [0u8; 8];
+        be.copy_from_slice(&UBERBLOCK_MAGIC.to_be_bytes());
+        assert_eq!(detect_endian(&be), Some(Endian::Big));
+        assert_eq!(detect_endian(&[0u8; 8]), None);
+        assert_eq!(detect_endian(&[]), None); // out of range -> 0 -> no magic
+    }
+
+    #[test]
+    fn empty_dva_is_reported_empty() {
+        assert!(Dva::default().is_empty());
+        let present = Dva {
+            vdev: 0,
+            asize_sectors: 8,
+            offset_sectors: 100,
+            gang: false,
+        };
+        assert!(!present.is_empty());
+    }
+
+    #[test]
+    fn physical_byte_offset_applies_boot_skew() {
+        let dva = Dva {
+            vdev: 0,
+            asize_sectors: 8,
+            offset_sectors: 2,
+            gang: false,
+        };
+        assert_eq!(dva.physical_byte_offset(), (2 << 9) + Dva::BOOT_SKEW);
+    }
+
+    #[test]
+    fn parse_none_for_slot_without_magic() {
+        assert!(Uberblock::parse(&[0u8; 1024]).is_none());
+    }
+
+    #[test]
+    fn parse_reads_fields_and_gang_bit() {
+        // Craft a little-endian uberblock: magic + version + txg, and a rootbp
+        // DVA[0] with the gang bit set to exercise that branch.
+        let mut slot = [0u8; 1024];
+        slot[0..8].copy_from_slice(&UBERBLOCK_MAGIC.to_le_bytes());
+        slot[8..16].copy_from_slice(&5000u64.to_le_bytes()); // version
+        slot[16..24].copy_from_slice(&9u64.to_le_bytes()); // txg
+                                                           // rootbp at offset 40: DVA[0].w0 vdev=0 asize=1, w1 offset with gang bit.
+        slot[40..48].copy_from_slice(&1u64.to_le_bytes()); // asize=1
+        let w1 = (7u64) | (1u64 << 63); // offset 7, gang set
+        slot[48..56].copy_from_slice(&w1.to_le_bytes());
+        let ub = Uberblock::parse(&slot).unwrap();
+        assert_eq!(ub.version, 5000);
+        assert_eq!(ub.txg, 9);
+        assert_eq!(ub.endian, Endian::Little);
+        assert_eq!(ub.rootbp.dvas[0].asize_sectors, 1);
+        assert_eq!(ub.rootbp.dvas[0].offset_sectors, 7);
+        assert!(ub.rootbp.dvas[0].gang);
+    }
+
+    #[test]
+    fn parse_truncated_rootbp_defaults_to_empty_summary() {
+        // A slot with the magic but shorter than 40+128 bytes: rootbp falls back
+        // to the default summary rather than panicking.
+        let mut slot = [0u8; 64];
+        slot[0..8].copy_from_slice(&UBERBLOCK_MAGIC.to_le_bytes());
+        let ub = Uberblock::parse(&slot).unwrap();
+        assert_eq!(ub.rootbp, super::BlkptrSummary::default());
     }
 }
