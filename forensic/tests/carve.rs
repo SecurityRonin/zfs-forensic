@@ -73,6 +73,24 @@ fn live_present_file_is_not_reported_as_deleted() {
 }
 
 #[test]
+fn pool_without_snapshots_recovers_nothing() {
+    // The P0-P3 `tpool` image (ZFS_ORACLE_IMG) has no snapshots, so the DSL
+    // snapshot chain (ds_prev_snap_obj) is empty and recovery finds nothing —
+    // exercising the full happy path through an empty snapshot chain rather than
+    // fabricating a recovery.
+    let Ok(path) = std::env::var("ZFS_ORACLE_IMG") else {
+        return;
+    };
+    let Ok(img) = std::fs::read(path) else {
+        return;
+    };
+    assert!(
+        recover_deleted(&img).is_empty(),
+        "a pool with no snapshots must recover nothing"
+    );
+}
+
+#[test]
 fn malformed_image_recovers_nothing_without_panicking() {
     // A non-ZFS / truncated image yields nothing rather than fabricating or
     // panicking.

@@ -116,6 +116,102 @@ fn crafted_label_config_divergence_is_flagged() {
     );
 }
 
+/// The `pool_guid` value (big-endian XDR u64) lives at absolute offset 16568
+/// within a label (verified: `pool_guid = 11379600771744596893`). Flipping a
+/// byte there yields a label that still parses but with a different `pool_guid`.
+const LABEL_POOL_GUID_OFF: usize = 16568;
+
+#[test]
+fn label_pool_guid_value_divergence_is_flagged() {
+    // A well-formed 4-label vdev where L2 parses to a *different* pool_guid than
+    // L0/L1/L3 — the unambiguous spliced-label signal.
+    let vdev_size = 4 * 256 * 1024;
+    let mut img = vec![0u8; vdev_size];
+    let offs = [
+        0usize,
+        256 * 1024,
+        vdev_size - 2 * 256 * 1024,
+        vdev_size - 256 * 1024,
+    ];
+    for &off in &offs {
+        img[off..off + LABEL0.len()].copy_from_slice(LABEL0);
+    }
+    // Flip a byte of L2's pool_guid value so it parses to a different guid.
+    let l2 = vdev_size - 2 * 256 * 1024;
+    img[l2 + LABEL_POOL_GUID_OFF] ^= 0xff;
+    let anomalies = audit_image(&img);
+    let hit = anomalies
+        .iter()
+        .find(|a| {
+            matches!(
+                &a.kind,
+                AnomalyKind::LabelDivergence {
+                    field: "pool_guid",
+                    label: 2,
+                    ..
+                }
+            )
+        })
+        .expect("a label with a divergent pool_guid must be flagged");
+    assert_eq!(hit.severity, Severity::High);
+}
+
+/// The ashift value (big-endian XDR u64 = 12) low byte sits at absolute offset
+/// 17115 within a label (verified). Setting it to a different value yields a
+/// parseable label whose `vdev_tree.ashift` diverges.
+const LABEL_ASHIFT_LOWBYTE_OFF: usize = 17115;
+
+#[test]
+fn label_ashift_value_divergence_is_flagged() {
+    let vdev_size = 4 * 256 * 1024;
+    let mut img = vec![0u8; vdev_size];
+    for &off in &[
+        0usize,
+        256 * 1024,
+        vdev_size - 2 * 256 * 1024,
+        vdev_size - 256 * 1024,
+    ] {
+        img[off..off + LABEL0.len()].copy_from_slice(LABEL0);
+    }
+    // L2 keeps a valid config but a different ashift (12 → 13).
+    let l2 = vdev_size - 2 * 256 * 1024;
+    img[l2 + LABEL_ASHIFT_LOWBYTE_OFF] = 13;
+    let anomalies = audit_image(&img);
+    assert!(
+        anomalies.iter().any(|a| matches!(
+            &a.kind,
+            AnomalyKind::LabelDivergence {
+                field: "ashift",
+                label: 2,
+                ..
+            }
+        )),
+        "a label with a divergent ashift must be flagged, got: {anomalies:?}"
+    );
+}
+
+#[test]
+fn well_formed_four_label_pool_with_matching_labels_emits_no_divergence() {
+    // All four labels identical (real config): no divergence, and the rootbp
+    // check is Unreadable (no data region), so a whole clean 4-label device with
+    // no reachable blocks emits nothing.
+    let vdev_size = 4 * 256 * 1024;
+    let mut img = vec![0u8; vdev_size];
+    for &off in &[
+        0usize,
+        256 * 1024,
+        vdev_size - 2 * 256 * 1024,
+        vdev_size - 256 * 1024,
+    ] {
+        img[off..off + LABEL0.len()].copy_from_slice(LABEL0);
+    }
+    let anomalies = audit_image(&img);
+    assert!(
+        anomalies.is_empty(),
+        "four matching labels + no data region must emit nothing, got: {anomalies:?}"
+    );
+}
+
 #[test]
 fn findings_mirror_forensicnomicon_report_model() {
     // audit_findings returns forensicnomicon report::Finding tagged with the
@@ -136,9 +232,26 @@ fn malformed_input_never_panics() {
     assert!(audit_image(&[]).is_empty());
     assert!(audit_image(&[0u8; 16]).is_empty());
     assert!(audit_image(&[0xffu8; 4096]).is_empty());
+    // A full label-sized buffer of garbage: passes the length guard but fails
+    // VdevLabel::parse (no uberblock magic) — the L0-parse-fail return.
+    assert!(audit_image(&vec![0xffu8; 256 * 1024]).is_empty());
     for start in (0..LABEL0.len().saturating_sub(8192)).step_by(8192) {
         let _ = audit_image(&LABEL0[start..start + 8192]);
     }
+}
+
+#[test]
+fn small_but_labelled_image_skips_the_whole_vdev_divergence_check() {
+    // A real L0 label followed by too little space for a four-label vdev: the
+    // divergence check is a whole-vdev signal, so it is skipped (the
+    // image_len < 4 labels guard), yielding no label anomaly.
+    let mut img = vec![0u8; 2 * 256 * 1024]; // only room for the front pair
+    img[..LABEL0.len()].copy_from_slice(LABEL0);
+    let anomalies = audit_image(&img);
+    assert!(
+        !anomalies.iter().any(|a| a.code == "ZFS-LABEL-DIVERGENCE"),
+        "a sub-four-label image must not emit a label-divergence anomaly, got: {anomalies:?}"
+    );
 }
 
 // ── env-gated whole-pool checks (complete image: all labels + child blocks) ──
