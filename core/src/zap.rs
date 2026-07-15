@@ -142,6 +142,28 @@ pub fn zap_lookup(block: &[u8], name: &str) -> Option<u64> {
         .map(|(_, v)| v)
 }
 
+/// List every `(name, value_bytes)` entry of a **fat-ZAP** object, preserving the
+/// full byte payload of each value rather than folding it to a `u64`.
+///
+/// This is what wide-value ZAPs need — e.g. the SA `LAYOUTS` object, whose values
+/// are arrays of `le_int_size`-byte integers (attr ids). The bytes are returned in
+/// the on-disk (big-endian) order the ZAP stored them; the caller re-groups them
+/// by the entry's integer size.
+///
+/// A micro-ZAP has only fixed 8-byte values, so this returns each value's 8 raw
+/// little-endian bytes for a micro-ZAP block (rarely needed, but consistent).
+#[must_use]
+pub fn zap_list_arrays(block: &[u8]) -> Vec<(String, Vec<u8>)> {
+    match le_u64(block, 0) {
+        ZBT_MICRO => micro_list(block)
+            .into_iter()
+            .map(|(name, value)| (name, value.to_le_bytes().to_vec()))
+            .collect(),
+        ZBT_HEADER => fat_list_arrays(block),
+        _ => Vec::new(),
+    }
+}
+
 // ---- micro-ZAP -------------------------------------------------------------
 
 fn micro_list(block: &[u8]) -> Vec<(String, u64)> {
@@ -187,6 +209,58 @@ fn fat_list(block: &[u8]) -> Vec<(String, u64)> {
         off += block_size;
     }
     out
+}
+
+/// Like [`fat_list`] but preserves each entry's full value byte payload (used for
+/// wide-value objects such as the SA `LAYOUTS` ZAP).
+fn fat_list_arrays(block: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let block_size = fat_block_size(block);
+    if block_size == 0 {
+        return Vec::new(); // cov:unreachable: a real fat-ZAP block is >= 512 bytes
+    }
+    let mut out = Vec::new();
+    let mut off = block_size;
+    while off + ZAP_LEAF_HDR_SIZE <= block.len() {
+        let leaf = &block[off..(off + block_size).min(block.len())];
+        if le_u64(leaf, 0) == ZBT_LEAF && le_u32(leaf, 24) == ZAP_LEAF_MAGIC {
+            fat_leaf_entries_arrays(leaf, block_size, &mut out);
+        }
+        off += block_size;
+    }
+    out
+}
+
+fn fat_leaf_entries_arrays(leaf: &[u8], block_size: usize, out: &mut Vec<(String, Vec<u8>)>) {
+    let block_shift = block_size.trailing_zeros() as usize;
+    let nhash = 1usize << block_shift.saturating_sub(5);
+    let chunk_area = ZAP_LEAF_HDR_SIZE + nhash * 2;
+    if chunk_area >= leaf.len() {
+        return; // cov:unreachable: nhash*2 < block_size for shift>=6
+    }
+    let nchunks = (leaf.len() - chunk_area) / ZAP_LEAF_CHUNKSIZE;
+    for ci in 0..nchunks {
+        let co = chunk_area + ci * ZAP_LEAF_CHUNKSIZE;
+        if u8_at(leaf, co) != ZAP_CHUNK_ENTRY {
+            continue;
+        }
+        let le_int_size = usize::from(u8_at(leaf, co + 1));
+        let le_name_chunk = le_u16(leaf, co + 4);
+        let le_name_numints = le_u16(leaf, co + 6) as usize;
+        let le_value_chunk = le_u16(leaf, co + 8);
+        let le_value_numints = le_u16(leaf, co + 10) as usize;
+
+        let mut name = array_bytes(leaf, chunk_area, nchunks, le_name_chunk, le_name_numints);
+        if name.last() == Some(&0) {
+            name.pop();
+        }
+        let name = String::from_utf8_lossy(&name).into_owned();
+
+        let want = le_int_size.saturating_mul(le_value_numints);
+        let value_bytes = array_bytes(leaf, chunk_area, nchunks, le_value_chunk, want);
+        if !name.is_empty() {
+            out.push((name, value_bytes));
+        }
+    }
 }
 
 /// The fat-ZAP block size, inferred from the buffer by probing where the first
@@ -385,5 +459,55 @@ mod unit {
         let dnode = Dnode::parse(&raw, Endian::Little).unwrap();
         let img = vec![0u8; 16];
         assert!(super::read_zap_object(&img, &dnode).is_err());
+    }
+
+    #[test]
+    fn zap_list_arrays_micro_folds_value_to_8_le_bytes() {
+        // On a micro-ZAP, zap_list_arrays returns each value's 8 raw LE bytes.
+        let b = micro_block(&[("ROOT", 34)]);
+        let arrays = super::zap_list_arrays(&b);
+        assert_eq!(arrays.len(), 1);
+        assert_eq!(arrays[0].0, "ROOT");
+        assert_eq!(arrays[0].1, 34u64.to_le_bytes().to_vec());
+        // An unknown block type yields nothing.
+        assert!(super::zap_list_arrays(&[0u8; 512]).is_empty());
+    }
+
+    #[test]
+    fn zap_list_arrays_fat_preserves_multi_int_value() {
+        // A fat-ZAP leaf with one ENTRY: name = "3" (one ARRAY chunk), value = a
+        // u16-array [5, 6] stored big-endian across one ARRAY chunk. zap_list_arrays
+        // returns the full 4 value bytes (00 05 00 06), which the SA-layouts parser
+        // regroups into u16 ids.
+        let bs = 512usize;
+        let mut b = vec![0u8; bs * 2];
+        b[0..8].copy_from_slice(&ZBT_HEADER.to_le_bytes());
+        let leaf = bs;
+        b[leaf..leaf + 8].copy_from_slice(&ZBT_LEAF.to_le_bytes());
+        b[leaf + 24..leaf + 28].copy_from_slice(&super::ZAP_LEAF_MAGIC.to_le_bytes());
+        let chunk_area = leaf + super::ZAP_LEAF_HDR_SIZE + 16 * 2;
+        // chunk 0 = ENTRY: name in chunk 1, value in chunk 2.
+        b[chunk_area] = super::ZAP_CHUNK_ENTRY;
+        b[chunk_area + 1] = 2; // le_int_size = 2 (u16 values)
+        b[chunk_area + 4..chunk_area + 6].copy_from_slice(&1u16.to_le_bytes()); // name_chunk
+        b[chunk_area + 6..chunk_area + 8].copy_from_slice(&1u16.to_le_bytes()); // name_numints
+        b[chunk_area + 8..chunk_area + 10].copy_from_slice(&2u16.to_le_bytes()); // value_chunk
+        b[chunk_area + 10..chunk_area + 12].copy_from_slice(&2u16.to_le_bytes()); // value_numints
+        let c1 = chunk_area + super::ZAP_LEAF_CHUNKSIZE; // chunk 1 (name)
+        b[c1] = super::ZAP_CHUNK_ARRAY;
+        b[c1 + 1] = b'3'; // name payload "3"
+        b[c1 + 1 + super::ZAP_LEAF_ARRAY_BYTES..c1 + 3 + super::ZAP_LEAF_ARRAY_BYTES]
+            .copy_from_slice(&u16::MAX.to_le_bytes()); // next = end
+        let c2 = chunk_area + 2 * super::ZAP_LEAF_CHUNKSIZE; // chunk 2 (value)
+        b[c2] = super::ZAP_CHUNK_ARRAY;
+        // value bytes: two u16 ids [5, 6] big-endian = 00 05 00 06.
+        b[c2 + 1..c2 + 5].copy_from_slice(&[0, 5, 0, 6]);
+        b[c2 + 1 + super::ZAP_LEAF_ARRAY_BYTES..c2 + 3 + super::ZAP_LEAF_ARRAY_BYTES]
+            .copy_from_slice(&u16::MAX.to_le_bytes());
+
+        let arrays = super::zap_list_arrays(&b);
+        assert_eq!(arrays.len(), 1);
+        assert_eq!(arrays[0].0, "3");
+        assert_eq!(arrays[0].1, vec![0u8, 5, 0, 6]);
     }
 }

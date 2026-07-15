@@ -35,12 +35,17 @@ pub enum DmuType {
     DslDirChildMap,
     /// `DMU_OT_DSL_DATASET` (16).
     DslDataset,
+    /// `DMU_OT_ZNODE` (17) — a legacy `znode_phys_t` bonus (pre-SA metadata).
+    Znode,
     /// `DMU_OT_PLAIN_FILE_CONTENTS` (19) — file data.
     PlainFileContents,
     /// `DMU_OT_DIRECTORY_CONTENTS` (20) — a ZPL directory (a ZAP).
     DirectoryContents,
     /// `DMU_OT_MASTER_NODE` (21) — the ZPL master node (object 1 of a dataset).
     MasterNode,
+    /// `DMU_OT_SA` (44) — a System-Attributes bonus (`sa_hdr_phys_t` + packed
+    /// attributes; modern ZPL file/dir metadata).
+    Sa,
     /// Any other / newer type — carries the raw value.
     Other(u8),
 }
@@ -61,9 +66,11 @@ impl DmuType {
             12 => DmuType::DslDir,
             13 => DmuType::DslDirChildMap,
             16 => DmuType::DslDataset,
+            17 => DmuType::Znode,
             19 => DmuType::PlainFileContents,
             20 => DmuType::DirectoryContents,
             21 => DmuType::MasterNode,
+            44 => DmuType::Sa,
             other => DmuType::Other(other),
         }
     }
@@ -83,9 +90,11 @@ impl DmuType {
             DmuType::DslDir => 12,
             DmuType::DslDirChildMap => 13,
             DmuType::DslDataset => 16,
+            DmuType::Znode => 17,
             DmuType::PlainFileContents => 19,
             DmuType::DirectoryContents => 20,
             DmuType::MasterNode => 21,
+            DmuType::Sa => 44,
             DmuType::Other(v) => v,
         }
     }
@@ -97,7 +106,9 @@ mod unit {
 
     #[test]
     fn from_raw_round_trips_known_and_other() {
-        for v in [0u8, 1, 2, 3, 5, 8, 10, 11, 12, 13, 16, 19, 20, 21, 200] {
+        for v in [
+            0u8, 1, 2, 3, 5, 8, 10, 11, 12, 13, 16, 17, 19, 20, 21, 44, 200,
+        ] {
             assert_eq!(DmuType::from_raw(v).raw(), v);
         }
     }

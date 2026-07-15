@@ -19,7 +19,7 @@
 //!   `zdb`: layout `3 = [5 6 4 12 13 7 11 0 1 2 3 8 21 16 19]`.
 //!
 //! The env-gated `ZFS_ORACLE_IMG` tests read the full 512 MiB image and do the
-//! real SA-registry → ZplAttrs, file-content, and path-resolution walk end-to-end.
+//! real SA-registry → `ZplAttrs`, file-content, and path-resolution walk end-to-end.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -42,8 +42,12 @@ const BAR_SHA256: &str = "e68db4521d8c341f11de6231fabd41ac8e35655934b7dced82db76
 
 fn sha256_hex(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
     let digest = Sha256::digest(data);
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    digest.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }
 
 // ---- SA registry ----------------------------------------------------------
@@ -137,7 +141,7 @@ fn sa_bonus_with_missing_layout_returns_none_never_panics() {
     let mut bonus = vec![0u8; 176];
     bonus[0..4].copy_from_slice(&0x2F_505Au32.to_le_bytes()); // SA_MAGIC
                                                               // layout number 1000 (not defined), hdrsz 1*8.
-    let info: u16 = (1u16 << 10) | 1000;
+    let info: u16 = (1u16 << 10) | 0x03e8; // layout number 1000
     bonus[4..6].copy_from_slice(&info.to_le_bytes());
     assert!(decode_sa_bonus(&bonus, &reg, &layouts, Endian::Little).is_none());
 }

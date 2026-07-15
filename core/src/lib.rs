@@ -33,6 +33,7 @@ mod label;
 mod nvlist;
 mod objset;
 mod read;
+mod sa;
 mod uberblock;
 mod zap;
 mod zpl;
@@ -54,14 +55,20 @@ pub use objset::{ObjsetPhys, DMU_OST_META, DMU_OST_ZFS};
 pub use read::{
     mos_dnode, read_block, read_dnode_data, Block, MAX_BLOCK_SIZE, MAX_INDIRECT_LEVELS,
 };
+pub use sa::{
+    decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, SaAttrDesc, SaLayouts,
+    SaRegistry, ZplAttrs, SA_MAGIC, SA_TIME_SIZE, ZNODE_PHYS_SIZE,
+};
 pub use uberblock::{BlkptrSummary, Uberblock, UBERBLOCK_MAGIC, UBERBLOCK_MIN_SHIFT, UB_MMP_MAGIC};
 pub use zap::{
-    read_zap_object, zap_list, zap_lookup, ZAP_LEAF_MAGIC, ZAP_MAGIC, ZBT_HEADER, ZBT_LEAF,
-    ZBT_MICRO,
+    read_zap_object, zap_list, zap_list_arrays, zap_lookup, ZAP_LEAF_MAGIC, ZAP_MAGIC, ZBT_HEADER,
+    ZBT_LEAF, ZBT_MICRO,
 };
 pub use zpl::{
-    zpl_list_dir, zpl_master_root, zpl_objset, zpl_root_dir, ZPL_DIRENT_OBJ_MASK,
-    ZPL_MASTER_NODE_OBJ, ZPL_ROOT_NAME,
+    zpl_attrs, zpl_list_dir, zpl_lookup, zpl_master_root, zpl_objset, zpl_read_file,
+    zpl_read_file_with, zpl_read_path, zpl_root_dir, zpl_sa_context, DMU_OT_SA, DMU_OT_ZNODE,
+    SA_LAYOUTS_NAME, SA_REGISTRY_NAME, ZPL_DIRENT_OBJ_MASK, ZPL_MASTER_NODE_OBJ, ZPL_ROOT_NAME,
+    ZPL_SA_ATTRS_NAME,
 };
 
 /// Parse a packed XDR nvlist config from a buffer beginning with the 4-byte
