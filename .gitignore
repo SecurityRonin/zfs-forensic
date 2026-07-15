@@ -1,0 +1,18 @@
+/target
+
+# Pure-library workspace — the lock is not committed (fleet policy commits
+# Cargo.lock only in binary/app repos, so downstream consumers resolve freely).
+/Cargo.lock
+
+# Large minted ZFS oracle images are gitignored (512M each) — only the small
+# always-on L0 vdev label fixture (tests/data/zfs_label0.bin, 256 KiB) and the
+# oracle TEXT ground truth (tests/data/README.md) are committed. Re-mint the
+# full image from the recorded zpool/zfs commands and point ZFS_ORACLE_IMG at it.
+/tests/data/*.img
+
+# OS / editor cruft.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

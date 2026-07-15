@@ -1,0 +1,30 @@
+[package]
+name = "zfs-forensic"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Forensic anomaly auditor for ZFS — uberblock-history/txg point-in-time, orphaned-dataset and integrity findings as graded report::Finding, built on zfs-core"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/zfs-forensic"
+readme.workspace = true
+authors.workspace = true
+keywords = ["forensics", "zfs", "dfir", "carving", "anti-forensics"]
+categories.workspace = true
+exclude = [
+    "/fuzz",
+    "/.github",
+    "/docs",
+    "/tests",
+    "/tests/data/*.img",
+    "/tests/data/*.bin",
+]
+
+[dependencies]
+zfs-core = { workspace = true }
+# ZFS structure knowledge + the shared report model (Severity/Observation).
+forensicnomicon = { workspace = true }
+
+[lints]
+workspace = true

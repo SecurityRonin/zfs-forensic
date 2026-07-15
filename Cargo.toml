@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = ["core", "forensic"]
+
+# Single source of truth for fields shared (identical) by every member (DRY).
+# `version` is NOT hoisted: core and forensic are versioned independently, so
+# each keeps its own `version` inline.
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/SecurityRonin/zfs-forensic"
+homepage = "https://github.com/SecurityRonin/zfs-forensic"
+authors = ["Albert Hui <albert@securityronin.com>"]
+categories = ["parser-implementations", "filesystem"]
+readme = "README.md"
+
+# Single source of truth for dependency versions (DRY): declare each once;
+# members write `dep.workspace = true`. The inter-crate `zfs-core` version lives
+# here too, so a bump touches one line instead of every member.
+[workspace.dependencies]
+zfs-core = { path = "core", version = "0.1.0" }
+forensicnomicon = "1"
+thiserror = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all                      = { level = "warn", priority = -1 }
+pedantic                 = { level = "warn", priority = -1 }
+correctness              = { level = "deny", priority = -1 }
+suspicious               = { level = "deny", priority = -1 }
+unwrap_used              = { level = "deny", priority = 0 }
+expect_used              = { level = "deny", priority = 0 }
+module_name_repetitions  = { level = "allow", priority = 1 }
+must_use_candidate       = { level = "allow", priority = 1 }
+missing_errors_doc       = { level = "allow", priority = 1 }
+missing_panics_doc       = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_possible_wrap       = { level = "allow", priority = 1 }
+cast_sign_loss           = { level = "allow", priority = 1 }
+cast_precision_loss      = { level = "allow", priority = 1 }
+too_many_lines           = { level = "allow", priority = 1 }
+items_after_statements   = { level = "allow", priority = 1 }
+similar_names            = { level = "allow", priority = 1 }
+manual_let_else          = { level = "allow", priority = 1 }
