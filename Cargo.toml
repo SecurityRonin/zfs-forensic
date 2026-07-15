@@ -22,6 +22,12 @@ readme = "README.md"
 zfs-core = { path = "core", version = "0.1.0" }
 forensicnomicon = "1"
 thiserror = "2"
+# P1 block I/O decode/verify stack (batteries-included — no default-features
+# slimming; the analyst gets one static binary that decompresses every codec).
+sha2 = "0.10"
+lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
+flate2 = "1"
+zstd = "0.13"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -19,9 +19,13 @@
 //! a config field in the wrong order.
 
 /// Byte order of the on-disk data, discovered from the uberblock magic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// [`Default`] is [`Endian::Little`], the common case (x86_64 / aarch64 pools),
+/// so a zero-initialised [`crate::Blkptr`] has a sane byte order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Endian {
     /// Little-endian pool (the common case on x86_64 / aarch64 hosts).
+    #[default]
     Little,
     /// Big-endian pool (created on a big-endian host, e.g. SPARC).
     Big,

@@ -29,6 +29,7 @@
 //! it (the three DVAs plus type/level/compression); the full block-pointer tree
 //! walk, checksum verify, and decompression belong to a later phase.
 
+use crate::blkptr::Dva;
 use crate::bytes::{be_u64, le_u64, Endian, Reader};
 
 /// `UBERBLOCK_MAGIC` (`OuroBoros`).
@@ -49,43 +50,6 @@ const OFF_TXG: usize = 16;
 const OFF_GUID_SUM: usize = 24;
 const OFF_TIMESTAMP: usize = 32;
 const OFF_ROOTBP: usize = 40;
-
-/// A Data Virtual Address: one of the (up to three, ditto) copies a block
-/// pointer records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Dva {
-    /// Top-level vdev index.
-    pub vdev: u32,
-    /// Allocated size, in 512-byte sectors (`asize`).
-    pub asize_sectors: u32,
-    /// Offset within the vdev, in 512-byte sectors (before the boot-region skew).
-    pub offset_sectors: u64,
-    /// Gang-block flag (`G`).
-    pub gang: bool,
-}
-
-impl Dva {
-    /// The 4 MiB skew that skips the two front vdev labels + boot block, added
-    /// when translating a DVA offset to a raw byte position on the vdev.
-    pub const BOOT_SKEW: u64 = 0x0040_0000;
-
-    /// Translate this DVA to a raw byte offset on its vdev:
-    /// `(offset_sectors << 9) + 0x400000`.
-    ///
-    /// Only meaningful when [`Self::gang`] is false and `vdev == 0` in the
-    /// single-vdev P0 scope; multi-vdev / gang resolution is a later phase.
-    #[must_use]
-    pub fn physical_byte_offset(self) -> u64 {
-        (self.offset_sectors << 9).saturating_add(Self::BOOT_SKEW)
-    }
-
-    /// Whether this DVA is unused (all-zero) — the second/third ditto slots are
-    /// zero when a block has fewer than three copies.
-    #[must_use]
-    pub fn is_empty(self) -> bool {
-        self.vdev == 0 && self.asize_sectors == 0 && self.offset_sectors == 0
-    }
-}
 
 /// The P0 subset of a `blkptr_t`: enough to expose the MOS root without walking
 /// the tree. Full DVA translation across vdevs, gang blocks, embedded blkptrs,
@@ -158,6 +122,19 @@ pub struct Uberblock {
     pub timestamp: u64,
     /// `ub_rootbp` summary — the block pointer to the MOS objset.
     pub rootbp: BlkptrSummary,
+    /// The raw 128-byte `ub_rootbp` block pointer, so a caller can obtain the
+    /// full [`crate::Blkptr`] (checksum/birth/fill) via [`Self::rootbp_full`].
+    rootbp_raw: [u8; 128],
+}
+
+impl Uberblock {
+    /// The full block pointer to the MOS objset — the P1 [`crate::Blkptr`] with
+    /// the checksum words, birth txg, and fill count the P0 [`BlkptrSummary`]
+    /// omits. Decoded in the pool's detected byte order.
+    #[must_use]
+    pub fn rootbp_full(&self) -> crate::Blkptr {
+        crate::Blkptr::parse(&self.rootbp_raw, self.endian)
+    }
 }
 
 impl Uberblock {
@@ -169,10 +146,18 @@ impl Uberblock {
     pub fn parse(slot: &[u8]) -> Option<Self> {
         let endian = detect_endian(slot)?;
         let rd = Reader::new(endian);
-        let rootbp = slot
-            .get(OFF_ROOTBP..OFF_ROOTBP + 128)
-            .map(|bp| BlkptrSummary::parse(rd, bp))
-            .unwrap_or_default();
+        let mut rootbp_raw = [0u8; 128];
+        // Only decode the rootbp when the slot actually holds the 128-byte
+        // pointer; a truncated slot leaves the summary at its (empty) default so
+        // "field absent" stays distinct from "field is zero" (see the truncated
+        // test), and rootbp_raw stays zeroed (a hole).
+        let rootbp = match slot.get(OFF_ROOTBP..OFF_ROOTBP + 128) {
+            Some(bp) => {
+                rootbp_raw.copy_from_slice(bp);
+                BlkptrSummary::parse(rd, &rootbp_raw)
+            }
+            None => BlkptrSummary::default(),
+        };
         Some(Uberblock {
             endian,
             magic: UBERBLOCK_MAGIC,
@@ -181,6 +166,7 @@ impl Uberblock {
             guid_sum: rd.u64(slot, OFF_GUID_SUM),
             timestamp: rd.u64(slot, OFF_TIMESTAMP),
             rootbp,
+            rootbp_raw,
         })
     }
 }

@@ -4,11 +4,12 @@ Single machine-index of the fleet corpus lives in
 `~/src/issen/docs/corpus-catalog.md`; this file is the co-located human-facing
 detail. Cross-reference, do not duplicate.
 
-<!-- TODO(corpus-catalog): add these zfs-forensic entries (zfs_label0.bin +
-     the env-gated zfs.img) to issen/docs/corpus-catalog.md when the P0 work is
-     folded into the fleet catalog. -->
+<!-- TODO(corpus-catalog): add these zfs-forensic entries (zfs_label0.bin,
+     zfs_mos_objset.bin, zfs_mos_l1_indirect_lz4.bin + the env-gated zfs.img) to
+     issen/docs/corpus-catalog.md when the P0/P1 work is folded into the fleet
+     catalog. -->
 
-## Committed fixture
+## Committed fixtures
 
 ### `zfs_label0.bin`
 
@@ -23,6 +24,42 @@ detail. Cross-reference, do not duplicate.
   ring array — everything P0 (label + nvlist + uberblock) parses.
 - **md5:** `9fd4f776e8a28134e2641ed60b3d78cf`
 - **Consumed by:** `core/tests/label.rs`, `core/tests/uberblock.rs`.
+
+### `zfs_mos_objset.bin`
+
+- **Class:** `REAL-self` (Tier-2). The 4 KiB **MOS `objset_phys_t` block** — the
+  block the active uberblock's `rootbp` points at. Extracted byte-for-byte from
+  the minted pool with the independent oracle `zdb`:
+  `zdb -R -e -p /media/psf/tmp/zfs tpool 0:c015000:1000:r > zfs_mos_objset.bin`
+  (the `:r` flag dumps the raw 4096-byte block). Ground truth vouched for by
+  `zdb`, a separate implementation — not by us.
+- **What it holds:** the objset meta-dnode (a `dnode_phys_t`: `dn_type` = 10
+  `DMU_OT_DNODE`, `dn_nlevels` = 2, `dn_nblkptr` = 3, 16 KiB data blocks,
+  `dn_maxblkid` = 4, its `blkptr[0]` a level-1 LZ4 indirect), the ZIL header, and
+  `os_type` = 1 (`DMU_OST_META`) at offset 704.
+- **Independent-oracle checks it satisfies (P1):** `fletcher4` over the whole
+  block equals the rootbp checksum `zdb -uuuuu` reports
+  (`00000002bffcd5dd:00000a91372660e5:00145331c05695f5:1a16f2c8d3d157f0`) —
+  verified byte-exact; `ObjsetPhys::parse` decodes the meta-dnode.
+- **md5:** `d8d0b4e4a81c500f2533163a974decc7`
+- **Consumed by:** `core/tests/blkptr_io.rs` (always-on, no env gate).
+
+### `zfs_mos_l1_indirect_lz4.bin`
+
+- **Class:** `REAL-self` (Tier-2). The 4 KiB **LZ4-compressed L1 indirect block**
+  of the MOS meta-dnode (`comp` = 15, `psize` = 4 KiB, decompresses to
+  `lsize` = 128 KiB). Extracted from the minted pool via the `zdb` oracle:
+  `zdb -R -e -p /media/psf/tmp/zfs tpool 0:4025000:1000:r > zfs_mos_l1_indirect_lz4.bin`.
+  The block opens with ZFS's LZ4 framing — a 4-byte **big-endian** compressed
+  length prefix (`0x00000315` = 789 bytes) then the raw LZ4 stream.
+- **Codec oracle (byte-exact, independent):** the meta-dnode's `blkptr[0]` stores
+  the `fletcher4` checksum of *this* compressed block
+  (`0000008ed7fd6861:0001f75c33157372:037a2a265b04cac2:1d601bdab3e7e328`);
+  `checksum::verify` over the fixture matches it — proving the raw bytes are
+  intact — and `compress::decompress` inflates it to exactly 128 KiB, whose first
+  128 bytes decode as a level-0 `DMU_OT_DNODE` L0 blkptr.
+- **md5:** `2c6019af6aabb8d7c4d8c74064d2a4d1`
+- **Consumed by:** `core/tests/blkptr_io.rs` (always-on, no env gate).
 
 ### `zdb` ground truth (the independent oracle values the tests assert against)
 
@@ -97,8 +134,16 @@ sudo zdb -l  "$IMG"                             # 4 vdev labels + XDR nvlist con
 sudo zdb -lu "$IMG"                             # + uberblock array
 sudo zdb -uuuuu -e -p /media/psf/tmp/zfs tpool  # active uberblock + rootbp
 
-# --- extract committed fixture ---
+# --- extract committed fixtures ---
 dd if="$IMG" of=zfs_label0.bin bs=1 count=262144   # L0 label (256 KiB)
+
+# P1: raw block reads by DVA (pool exported; zdb -R needs -e -p). The :r flag
+# dumps the raw block (post-compression, PSIZE bytes) to stdout.
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:c015000:1000:r > zfs_mos_objset.bin
+zdb -R -e -p /media/psf/tmp/zfs tpool 0:4025000:1000:r > zfs_mos_l1_indirect_lz4.bin
+# 0:c015000  = rootbp DVA[0] (the MOS objset block, uncompressed).
+# 0:4025000  = the meta-dnode blkptr[0] DVA[0] (the LZ4 L1 indirect block);
+#              its byte offset = (meta-dnode blkptr[0].offset_sectors << 9).
 ```
 
 ### Content ground truth (for later file-read phases, not P0)

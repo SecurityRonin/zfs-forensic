@@ -15,6 +15,8 @@
 //! real DVA→physical translation end-to-end.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// Test scaffolding builds Blkptr instances field-by-field for readability.
+#![allow(clippy::field_reassign_with_default)]
 
 use zfs_core::{
     checksum, compress, mos_dnode, read_block, Blkptr, ChecksumType, CompressType, DmuType, Dnode,
@@ -51,9 +53,9 @@ fn rootbp_full_blkptr_decode_matches_zdb() {
 
     // zdb: [L0 DMU objset] fletcher4 uncompressed LE size=1000L/1000P birth=22 fill=51
     assert_eq!(bp.level, 0);
-    assert_eq!(bp.object_type, DmuType::Objset as u8);
-    assert_eq!(bp.compression, CompressType::Off as u8);
-    assert_eq!(bp.checksum, ChecksumType::Fletcher4 as u8);
+    assert_eq!(bp.object_type, DmuType::Objset.raw());
+    assert_eq!(bp.compression, CompressType::Off.raw());
+    assert_eq!(bp.checksum, ChecksumType::Fletcher4.raw());
     assert_eq!(bp.byteorder, Endian::Little);
     assert_eq!(bp.lsize_bytes(), 0x1000);
     assert_eq!(bp.psize_bytes(), 0x1000);
@@ -95,12 +97,9 @@ fn fletcher4_matches_zdb_over_mos_objset_block() {
 
 #[test]
 fn read_block_of_rootbp_returns_mos_objset_and_verifies_checksum() {
-    let path = match std::env::var("ZFS_ORACLE_IMG") {
-        Ok(p) => p,
-        Err(_) => {
-            eprintln!("skipping: set ZFS_ORACLE_IMG to the minted zfs.img to run");
-            return;
-        }
+    let Ok(path) = std::env::var("ZFS_ORACLE_IMG") else {
+        eprintln!("skipping: set ZFS_ORACLE_IMG to the minted zfs.img to run");
+        return;
     };
     let img = std::fs::read(&path).expect("read ZFS_ORACLE_IMG");
     let label = VdevLabel::parse(&img[..zfs_core::LABEL_SIZE]).unwrap();
@@ -156,18 +155,19 @@ fn objset_phys_metadnode_decodes() {
     // os_type = DMU_OST_META = 1 (the MOS).
     assert_eq!(os.os_type, 1);
     // The meta-dnode: dn_type=DMU_OT_DNODE(10), nlevels=2, nblkptr=3,
-    // datablkszsec=32 (16 KiB), maxblkid=1.
+    // datablkszsec=32 (16 KiB). Its data (the dnode array) spans blocks 0..=4,
+    // so dn_maxblkid == 4 (verified byte-exact against the fixture / zdb -R).
     let md = &os.meta_dnode;
-    assert_eq!(md.dn_type, DmuType::Dnode as u8);
+    assert_eq!(md.dn_type, DmuType::Dnode.raw());
     assert_eq!(md.dn_nlevels, 2);
     assert_eq!(md.dn_nblkptr, 3);
     assert_eq!(md.dn_datablkszsec, 32);
-    assert_eq!(md.dn_maxblkid, 1);
+    assert_eq!(md.dn_maxblkid, 4);
     // Its blkptr[0] is a level-1 indirect, LZ4-compressed, fletcher4.
     let bp0 = md.blkptr(0).expect("meta-dnode blkptr[0]");
     assert_eq!(bp0.level, 1);
-    assert_eq!(bp0.compression, CompressType::Lz4 as u8);
-    assert_eq!(bp0.object_type, DmuType::Dnode as u8);
+    assert_eq!(bp0.compression, CompressType::Lz4.raw());
+    assert_eq!(bp0.object_type, DmuType::Dnode.raw());
     assert_eq!(bp0.lsize_bytes(), 0x2_0000, "LSIZE 128 KiB");
     assert_eq!(bp0.psize_bytes(), 0x1000, "PSIZE 4 KiB");
 }
@@ -187,7 +187,7 @@ fn lz4_decompresses_real_zfs_block_to_lsize() {
     // DMU_OT_DNODE data block (fletcher4, LZ4).
     let l0 = Blkptr::parse(&out[..128], Endian::Little);
     assert_eq!(l0.level, 0);
-    assert_eq!(l0.object_type, DmuType::Dnode as u8);
+    assert_eq!(l0.object_type, DmuType::Dnode.raw());
 }
 
 #[test]
@@ -211,12 +211,9 @@ fn lz4_l1_block_checksum_matches_metadnode_stored_value() {
 
 #[test]
 fn mos_dnode_object_1_is_the_object_directory() {
-    let path = match std::env::var("ZFS_ORACLE_IMG") {
-        Ok(p) => p,
-        Err(_) => {
-            eprintln!("skipping: set ZFS_ORACLE_IMG to the minted zfs.img to run");
-            return;
-        }
+    let Ok(path) = std::env::var("ZFS_ORACLE_IMG") else {
+        eprintln!("skipping: set ZFS_ORACLE_IMG to the minted zfs.img to run");
+        return;
     };
     let img = std::fs::read(&path).expect("read ZFS_ORACLE_IMG");
     let label = VdevLabel::parse(&img[..zfs_core::LABEL_SIZE]).unwrap();
@@ -228,7 +225,7 @@ fn mos_dnode_object_1_is_the_object_directory() {
     let obj1 = mos_dnode(&img, &mos, 1).expect("mos_dnode(1)");
     assert_eq!(
         obj1.dn_type,
-        DmuType::ObjectDirectory as u8,
+        DmuType::ObjectDirectory.raw(),
         "object 1 is the object directory"
     );
     // zdb: object 1 has lvl 1 (nlevels 1), dnsize 512 (1 slot).
@@ -251,7 +248,7 @@ fn lying_lsize_is_capped_not_ooming() {
     bp.dvas[0].asize_sectors = 1;
     bp.lsize_raw = 0xffff; // (0xffff+1)<<9 = 32 MiB logical
     bp.psize_raw = 0xffff;
-    bp.compression = CompressType::Off as u8;
+    bp.compression = CompressType::Off.raw();
     let tiny = vec![0u8; 4096];
     // read_block must return an error (allocation-bomb / truncated), never panic.
     let _ = read_block(&tiny, &bp);
@@ -262,7 +259,7 @@ fn lying_nlevels_in_dnode_never_panics() {
     // A dnode claiming 255 levels of indirection against a tiny image must
     // terminate (bounded recursion / bounds-checked reads), never panic/OOM.
     let mut raw = [0u8; 512];
-    raw[0] = DmuType::PlainFileContents as u8; // dn_type
+    raw[0] = DmuType::PlainFileContents.raw(); // dn_type
     raw[2] = 255; // dn_nlevels (lie)
     raw[3] = 1; // dn_nblkptr
     let dnode = Dnode::parse(&raw, Endian::Little).unwrap();

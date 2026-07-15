@@ -60,4 +60,59 @@ pub enum ZfsError {
         /// The maximum this reader accepts.
         cap: u64,
     },
+
+    /// A block pointer declared a logical size beyond the sane cap, so the read
+    /// was rejected rather than attempting the allocation.
+    ///
+    /// Carries the field name, the offending value, and the cap breached.
+    #[error("block {field} value {value} exceeds cap {cap} (allocation-bomb guard)")]
+    AllocationBomb {
+        /// Which size field was out of range (`LSIZE`).
+        field: &'static str,
+        /// The offending value (bytes).
+        value: u64,
+        /// The maximum this reader accepts (bytes).
+        cap: u64,
+    },
+
+    /// A block's on-disk data could not be decompressed — the codec failed or
+    /// the framing was malformed. Carries the codec name and a reason so the
+    /// investigator sees which decoder rejected what.
+    #[error("{codec} decompression failed: {reason}")]
+    Decompress {
+        /// The compression codec that failed.
+        codec: &'static str,
+        /// Why decompression failed.
+        reason: &'static str,
+    },
+
+    /// A block pointer selected a compression function this reader does not
+    /// implement. Carries the raw enum value so the report names it.
+    #[error("unsupported compression function {value} (no decoder implemented)")]
+    UnsupportedCompression {
+        /// The raw `zio_compress` enum value.
+        value: u8,
+    },
+
+    /// A block pointer is **embedded** — its payload is inline in the blkptr
+    /// words rather than on disk. Inline-payload extraction is a later phase;
+    /// this surfaces the case explicitly (never a silent wrong read). Carries the
+    /// declared logical size.
+    #[error("embedded block pointer with inline {lsize}-byte payload (inline extraction not yet implemented)")]
+    EmbeddedBlkptr {
+        /// The declared logical size (bytes) of the inline payload.
+        lsize: u64,
+    },
+
+    /// An index/id exceeded its valid range while walking objects or an indirect
+    /// block tree. Carries what was indexed, the offending value, and the max.
+    #[error("{what} value {value} out of range (max {max})")]
+    OutOfRange {
+        /// What was being indexed (`blkid`, `top blkptr index`, …).
+        what: &'static str,
+        /// The offending value.
+        value: u64,
+        /// The maximum valid value.
+        max: u64,
+    },
 }

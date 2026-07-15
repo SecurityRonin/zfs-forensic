@@ -21,22 +21,36 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+mod blkptr;
 pub mod bytes;
+pub mod checksum;
+pub mod compress;
+mod dmu;
+mod dnode;
 mod error;
 mod label;
 mod nvlist;
+mod objset;
+mod read;
 mod uberblock;
 
+pub use blkptr::{detect_blkptr_endian, Blkptr, Dva, BOOT_SKEW};
 pub use bytes::{Endian, Reader};
+pub use checksum::ChecksumType;
+pub use compress::CompressType;
+pub use dmu::DmuType;
+pub use dnode::{Dnode, BLKPTR_SIZE, DNODE_CORE_SIZE, DNODE_SIZE};
 pub use error::ZfsError;
 pub use label::{
     active_uberblock, label_offsets, VdevLabel, LABEL_SIZE, NVLIST_OFFSET, NVLIST_SIZE,
     UBERBLOCK_RING_OFFSET, UBERBLOCK_RING_SIZE, VDEV_BOOT_HEADER_SIZE, VDEV_PAD_SIZE,
 };
 pub use nvlist::{NvList, NvValue, VdevTree};
-pub use uberblock::{
-    BlkptrSummary, Dva, Uberblock, UBERBLOCK_MAGIC, UBERBLOCK_MIN_SHIFT, UB_MMP_MAGIC,
+pub use objset::{ObjsetPhys, DMU_OST_META, DMU_OST_ZFS};
+pub use read::{
+    mos_dnode, read_block, read_dnode_data, Block, MAX_BLOCK_SIZE, MAX_INDIRECT_LEVELS,
 };
+pub use uberblock::{BlkptrSummary, Uberblock, UBERBLOCK_MAGIC, UBERBLOCK_MIN_SHIFT, UB_MMP_MAGIC};
 
 /// Parse a packed XDR nvlist config from a buffer beginning with the 4-byte
 /// packed header. Convenience re-export of [`nvlist::parse`].
