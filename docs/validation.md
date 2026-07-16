@@ -52,9 +52,18 @@ test from `zfs-core`'s exported primitives (`mos_dnode` / `read_zap_object` /
 decode still runs inside `zfs-core`. (A high-level *named-child-dataset* navigator
 is the remaining API gap; the primitives to build it are already public.)
 
+- **Redistribution.** The FreeBSD VM images are distributed by the FreeBSD
+  Project under the BSD license and are freely re-downloadable; the extracted
+  5 GiB partition is **not committed** (size), only documented — a cloner
+  re-downloads and re-extracts it from the source URL.
 - **Env-gated (`ZFS_TIER1_FREEBSD`):** the extracted `freebsd-zfs` partition
   (md5 `22a711abfb33ca90e54676272034e216`, offset 1108026880, 5 GiB).
 - **Test:** `core/tests/tier1_freebsd.rs` (skips cleanly when unset).
+- **Run command** (after extracting the partition per `tests/data/README.md`):
+  ```bash
+  ZFS_TIER1_FREEBSD=/abs/path/to/freebsd-zfs.part \
+    cargo test -p zfs-forensic-core --test tier1_freebsd
+  ```
 
 ## Tier-1 — the bootstrap layer (third-party raidz pool + `zdb`)
 
@@ -93,7 +102,54 @@ answer key. `VdevLabel::parse` on `zol-0.6.1/vdev0` reproduces exactly what
   `tests/data/zfs_zol061_vdev0_label0.bin`.
 - **Env-gated (`ZFS_TIER1_ZOL`):** all four vdevs, each decoding its own
   bootstrap independently to the shared answer key.
-- **Test:** `core/tests/tier1_zol061.rs`.
+- **Redistribution.** `zol-0.6.1.tar.bz2` is published by the OpenZFS project in
+  its `openzfs/zfs-images` repository (CDDL-1.0 project) and is freely
+  re-downloadable; the four extracted vdevs are **not committed** (only the 256
+  KiB L0-label slice is), re-downloaded from the source URL.
+- **Test:** `core/tests/tier1_zol061.rs`. The `zol061_vdev0_label_matches_zdb`
+  test runs always-on against the committed `zfs_zol061_vdev0_label0.bin`; the
+  four-vdev `zol061_all_four_vdevs_bootstrap_independently` test is env-gated.
+- **Run commands:**
+  ```bash
+  # always-on (committed 256 KiB L0-label fixture, no download):
+  cargo test -p zfs-forensic-core --test tier1_zol061 \
+    zol061_vdev0_label_matches_zdb
+  # full four-vdev corpus (after extracting zol-0.6.1.tar.bz2):
+  ZFS_TIER1_ZOL=/tmp/zol061/zol-0.6.1 \
+    cargo test -p zfs-forensic-core --test tier1_zol061
+  ```
+
+## Reproduce Tier-1 from a clean clone
+
+Both Tier-1 pools are downloadable third-party artifacts (nothing self-authored).
+From a fresh `git clone`:
+
+1. **FreeBSD full read path** (single-`disk` vdev — carries the whole path to
+   Tier-1). Download the vendor image, verify, decompress/convert/extract per
+   `tests/data/README.md`, then:
+   ```bash
+   curl -L -o /tmp/fbsd.qcow2.xz \
+     https://download.freebsd.org/releases/VM-IMAGES/14.3-RELEASE/amd64/Latest/FreeBSD-14.3-RELEASE-amd64-zfs.qcow2.xz
+   sha256sum /tmp/fbsd.qcow2.xz   # == 8bfcc2c6f3b3f259b0288b41db808328d98fe015f59432ffd8d69276829a9a8d
+   # ... xz -d / qemu-img convert / dd-extract the freebsd-zfs partition (README) ...
+   md5 /tmp/zfs-freebsd/freebsd-zfs.part   # == 22a711abfb33ca90e54676272034e216
+   ZFS_TIER1_FREEBSD=/tmp/zfs-freebsd/freebsd-zfs.part \
+     cargo test -p zfs-forensic-core --test tier1_freebsd
+   ```
+2. **ZoL bootstrap layer** (third-party raidz1 pool). The always-on slice needs
+   no download; the full four-vdev corpus:
+   ```bash
+   curl -L -o /tmp/zol.tar.bz2 \
+     https://raw.githubusercontent.com/openzfs/zfs-images/master/zol-0.6.1.tar.bz2
+   md5 /tmp/zol.tar.bz2           # == 53f3ad954d062e04ab7cd4744da77f9a
+   mkdir -p /tmp/zol061 && tar -xjf /tmp/zol.tar.bz2 -C /tmp/zol061
+   ZFS_TIER1_ZOL=/tmp/zol061/zol-0.6.1 \
+     cargo test -p zfs-forensic-core --test tier1_zol061
+   ```
+
+The self-mint pools below (`tpool` / `dtpool`, and the `ZFS_SNAP_ORACLE_IMG`
+F-CARVE oracle) are **Tier-2** — real OpenZFS output confirmed by `zdb`, but we
+chose the scenario, so they are not part of this Tier-1 block.
 
 ## Tier-2 — the always-on self-mint regression corpus (`zdb`)
 
