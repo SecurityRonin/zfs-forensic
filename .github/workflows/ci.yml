@@ -85,7 +85,7 @@ jobs:
       # binary is unrestricted. Fetch the latest release and scan the tree.
       - name: Install gitleaks
         run: |
-          VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r '.tag_name[1:]')
+          VERSION=8.30.1   # pinned: avoids flaky unauthenticated releases/latest API (404 under concurrency) + supply-chain drift
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
             | tar xz -C /tmp gitleaks
       - name: Run gitleaks
