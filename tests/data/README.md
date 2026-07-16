@@ -4,22 +4,68 @@ Single machine-index of the fleet corpus lives in
 `~/src/issen/docs/corpus-catalog.md`; this file is the co-located human-facing
 detail. Cross-reference, do not duplicate.
 
-<!-- TODO(corpus-catalog): add these zfs-forensic entries (zfs_label0.bin,
-     zfs_mos_objset.bin, zfs_mos_l1_indirect_lz4.bin, zfs_zap_fat_objdir.bin,
-     zfs_zap_micro_master.bin, zfs_zap_micro_root.bin, the P3 SA fixtures
-     zfs_sa_file_dnode.bin, zfs_sa_dir_dnode.bin, zfs_sa_registry.bin,
-     zfs_sa_layouts.bin + the env-gated zfs.img) to issen/docs/corpus-catalog.md
-     when the P0–P3 work is folded into the fleet catalog. -->
+<!-- TODO(corpus-catalog): add these zfs-forensic entries (zfs_zol061_vdev0_label0.bin,
+     zfs_label0.bin, zfs_mos_objset.bin, zfs_mos_l1_indirect_lz4.bin,
+     zfs_zap_fat_objdir.bin, zfs_zap_micro_master.bin, zfs_zap_micro_root.bin,
+     the P3 SA fixtures zfs_sa_file_dnode.bin, zfs_sa_dir_dnode.bin,
+     zfs_sa_registry.bin, zfs_sa_layouts.bin + the env-gated zfs.img) to
+     issen/docs/corpus-catalog.md when the P0–P3 work is folded into the fleet
+     catalog. -->
+
+## Validation tiers at a glance
+
+- **Tier-1 (bootstrap layer):** a **third-party** OpenZFS reference pool
+  (`openzfs/zfs-images` `zol-0.6.1`) with `zdb -l` as the independent answer key.
+  Neither the pool nor the ground truth is ours. This validates the per-vdev
+  bootstrap — vdev label + XDR nvlist config + uberblock ring — which reads on a
+  single raidz member **without** RAIDZ reconstruction. Fixture:
+  `zfs_zol061_vdev0_label0.bin`; test: `core/tests/tier1_zol061.rs`.
+- **Tier-2 (DMU / ZAP / ZPL / SA / file + F-CARVE layers):** a single-vdev
+  self-mint pool (`tpool` / `dtpool`), real OpenZFS output whose ground truth is
+  vouched for by `zdb` (a separate implementation), but authored by us. Reading
+  those layers on the raidz `zol-0.6.1` pool needs parity reconstruction across
+  the four vdevs, which `zfs-core` defers — so they stay Tier-2. All the
+  `zfs_*` fixtures below and the env-gated `zfs.img` / `zfs_snap.img` are Tier-2.
 
 ## Committed fixtures
+
+### `zfs_zol061_vdev0_label0.bin` (Tier-1 — bootstrap layer)
+
+- **Class:** `REAL-ext` (**Tier-1**). The L0 (256 KiB) vdev label lifted verbatim
+  from **`vdev0`** of the **OpenZFS project's own reference pool**
+  `zol-0.6.1` — a `raidz1` pool of four 256 MiB file-vdevs published in
+  [`openzfs/zfs-images`](https://github.com/openzfs/zfs-images). This is a genuine
+  third-party artifact with a documented `zdb -l` answer key: neither the pool nor
+  the ground truth is ours.
+- **Source:** <https://raw.githubusercontent.com/openzfs/zfs-images/master/zol-0.6.1.tar.bz2>
+  (md5 `53f3ad954d062e04ab7cd4744da77f9a`, 384 KiB). Extract → `zol-0.6.1/vdev{0..3}`
+  (per-vdev md5: `vdev0 d79575be780c064b12ffe926e69449af`,
+  `vdev1 ced54d22d5db48f49d5cba31216cda5b`,
+  `vdev2 66777ec94404ecb0170b1497b4c3d88b`,
+  `vdev3 b734fd74dacfbc2678773838e6b2b7af`). Fixture cut with
+  `dd if=zol-0.6.1/vdev0 of=zfs_zol061_vdev0_label0.bin bs=1024 count=256`.
+- **`zdb -l` / `zdb -u` ground truth (the independent oracle, the answer key):**
+  `version 5000`, `name 'zol-0.6.1'`, `state 1`, `txg 72`, `vdev_children 1`;
+  `vdev_tree type 'raidz'`, `nparity 1`, `ashift 9`; active uberblock
+  `magic 0x00bab10c` (little-endian), `version 5000`, `txg 72`, ring slot
+  `72 % 128 = 72` (ashift 9 → 1 KiB slots → 128 slots).
+- **Independent-oracle checks it satisfies:** `VdevLabel::parse` on this real vdev
+  label reproduces every value above — the Tier-1 validation of the bootstrap
+  layer (label + nvlist + uberblock) that reads per-vdev without RAIDZ
+  reconstruction. The MOS/DMU/ZAP/ZPL/file layers of this raidz pool need parity
+  reconstruction across the four vdevs (deferred by `zfs-core`), so those layers
+  stay Tier-2 on the self-mint below.
+- **md5:** `5351411f80df20ddea67629b1fca14d5`
+- **Consumed by:** `core/tests/tier1_zol061.rs` (always-on). The full four-vdev
+  corpus is env-gated via `ZFS_TIER1_ZOL` (see below) and NOT committed.
 
 ### `zfs_label0.bin`
 
 - **Class:** `REAL-self` (Tier-2). Self-minted real OpenZFS pool; the ground
   truth is vouched for by `zdb` — a **separate, independent implementation** (the
-  ZFS debugger), not by us. A genuine Tier-1 artifact would be a third-party ZFS
-  image with an external answer key; none is published for ZFS, so this is the
-  best available oracle tier. `zdb` is the independent structural oracle.
+  ZFS debugger), not by us. (The Tier-1 third-party artifact above validates the
+  bootstrap layer; this self-mint carries the MOS→file layers `zol-0.6.1` cannot
+  reach without RAIDZ reconstruction.) `zdb` is the independent structural oracle.
 - **What it is:** the **L0 vdev label** — the first 256 KiB of the minted image
   (`dd if=zfs.img of=zfs_label0.bin bs=1 count=262144`). Contains the 8 KiB blank
   pad, 8 KiB boot header, 112 KiB XDR nvlist config, and the 128 KiB uberblock
@@ -219,6 +265,18 @@ values stored big-endian; embedded-blkptr `BPE_PAYLOAD` = bytes `[0,48) ++ [56,8
 ++ [96,128)` of the 128-byte pointer, LZ4-framed with a 4-byte BE length prefix.
 
 ## Env-gated full images (NOT committed)
+
+### `zol-0.6.1/` four vdevs — pointed to by `ZFS_TIER1_ZOL` (Tier-1)
+
+- **Class:** `REAL-ext` (**Tier-1**), the same third-party `openzfs/zfs-images`
+  `zol-0.6.1` raidz1 pool the committed L0 fixture comes from. Four 256 MiB
+  (sparse) file-vdevs; not committed — freely re-downloadable from the source URL
+  above (md5s above). Extract to `/tmp` (never under `~/src`) and set
+  `ZFS_TIER1_ZOL=/tmp/zol061/zol-0.6.1`.
+- **Consumed by:** `core/tests/tier1_zol061.rs` →
+  `zol061_all_four_vdevs_bootstrap_independently`, which asserts each of the four
+  raidz members independently decodes its own L0 bootstrap to the shared answer
+  key. Skips cleanly when the env var is unset.
 
 ### `zfs.img` (512 MiB) — pointed to by `ZFS_ORACLE_IMG`
 
