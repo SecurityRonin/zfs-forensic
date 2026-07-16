@@ -56,7 +56,7 @@ The bare crate names `zfs` and `zfs-core` are both taken on crates.io, so this o
 
 ## Trust but verify
 
-- **`#![forbid(unsafe_code)]`** in both crates — no `unsafe` in our source. (The batteries-included `zstd` extent decoder links libzstd's C; every ZFS-parsing line is our own safe Rust.)
+- **`#![forbid(unsafe_code)]`** in both crates — no `unsafe` in our source. **Pure-Rust, no C toolchain**: every codec (including the batteries-included `ruzstd` zstd decoder) is pure Rust, so the reader builds as a single static binary with no C bindings.
 - **Panic-free** — bounds-checked reads throughout; nvlist length / count fields capped against allocation bombs; malformed input degrades to an empty / typed result, never a panic.
 - **Fuzzed** — one `cargo-fuzz` target per parsed structure (`label`, `uberblock`, `blkptr`, `dnode`, `zap`, `dsl`, `sa`, `read_block`) plus a `fuzz_forensic` target driving the full `audit_image` / `recover_deleted` pipeline. See [Validation](validation.md).
 - **Tier-1 validated (bootstrap)** — the vdev label / nvlist / uberblock reader is checked against the OpenZFS project's own `zol-0.6.1` reference pool, with `zdb` as the independent oracle; the DMU / file / carve layers are Tier-2 against a single-vdev self-mint (RAIDZ reconstruction deferred). See [Validation](validation.md).

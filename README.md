@@ -3,7 +3,7 @@
 [![zfs-forensic-core](https://img.shields.io/crates/v/zfs-forensic-core.svg?label=zfs-forensic-core)](https://crates.io/crates/zfs-forensic-core)
 [![zfs-forensic](https://img.shields.io/crates/v/zfs-forensic.svg?label=zfs-forensic)](https://crates.io/crates/zfs-forensic)
 [![Docs.rs](https://img.shields.io/docsrs/zfs-forensic?label=docs.rs)](https://docs.rs/zfs-forensic)
-[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-blue.svg)](https://www.rust-lang.org)
+[![Rust 1.87+](https://img.shields.io/badge/rust-1.87%2B-blue.svg)](https://www.rust-lang.org)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
 
@@ -90,7 +90,7 @@ Most ZFS tooling answers "what files are on this pool?" This workspace answers t
 
 ## Trust but verify
 
-- **`#![forbid(unsafe_code)]`** in both crates — no `unsafe` in our source. (The batteries-included `zstd` extent decoder links libzstd's C, so the reader is not a `#![no_std]` / pure-Rust build; every ZFS-parsing line is our own safe Rust.)
+- **`#![forbid(unsafe_code)]`** in both crates — no `unsafe` in our source. **Pure-Rust, no C toolchain**: every codec (including the batteries-included `ruzstd` zstd decoder) is pure Rust, so the reader builds as a single static binary with no C bindings.
 - **Panic-free** — every integer / length / offset field is read through bounds-checked helpers; nvlist length / count fields are capped against allocation bombs; a malformed image degrades to an empty or typed result, never a panic.
 - **Fuzzed** — one `cargo-fuzz` target per parsed structure (`label`, `uberblock`, `blkptr`, `dnode`, `zap`, `dsl`, `sa`, `read_block`) plus a `fuzz_forensic` target driving the full `audit_image` / `recover_deleted` pipeline. `fuzz.yml` builds every target on each push and deep-fuzzes each for 10 minutes weekly.
 - **Tier-1 validated (bootstrap layer)** — the vdev label + nvlist config + uberblock reader is checked against the OpenZFS project's own `zol-0.6.1` reference pool (`openzfs/zfs-images`), a third-party artifact whose ground truth comes from `zdb -l` / `zdb -u`, a wholly separate implementation.

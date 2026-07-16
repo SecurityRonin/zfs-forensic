@@ -211,6 +211,34 @@ detail. Cross-reference, do not duplicate.
 - **md5:** `3678d96bedd8fae56c0f93fddb15ee73`
 - **Consumed by:** `core/tests/sa.rs` (always-on, no env gate).
 
+### `zstd_frame.zst` + `zstd_frame.plain.txt` (zstd decode oracle)
+
+- **Class:** `SYNTHETIC` (Tier-2). A raw zstd frame and its plaintext, used to
+  validate the pure-Rust `ruzstd` zstd path (`compress::decompress` for
+  `CompressType::Zstd`) with an **independent encoder** (the standard zstd CLI),
+  never a self-encoded round-trip. `ruzstd` is decode-only, so the compressed
+  input is committed rather than produced at test time.
+- **Source / generator (verbatim):** the plaintext is the test string
+  `"zstd payload zstd payload zstd payload"` repeated 8× (304 bytes), compressed
+  once by the host **Zstandard CLI v1.5.6** (`zstd -3`):
+  ```sh
+  python3 -c "import sys; sys.stdout.buffer.write(b'zstd payload zstd payload zstd payload'*8)" > zstd_frame.plain.txt
+  zstd -3 -c zstd_frame.plain.txt > zstd_frame.zst
+  ```
+  The reader wraps this raw frame in the 8-byte `zfs_zstd` header (which it
+  skips) before decoding, so the fixture is the inner standard zstd frame.
+- **Independent-oracle check it satisfies:** `decompress(Zstd, header ++ frame,
+  304)` yields the plaintext byte-for-byte (encoder = zstd CLI, decoder = ruzstd
+  — different implementations).
+- **md5:** `zstd_frame.zst` `2ea131b849d4382ead6b695f42edf208`;
+  `zstd_frame.plain.txt` `ab32f920c166630e3fd0a28066e610ac`.
+- **sha256:** `zstd_frame.zst`
+  `1cf620d47fd9cfdddbf2f631afdd7b56b2dd1784db84e1725759f6cd1edec1e7`;
+  `zstd_frame.plain.txt`
+  `d46d4f055f36e2f50376cc95ed754237abf8da2033d5d0a47e7744790f1b3f8c`.
+- **Consumed by:** `core/src/compress.rs` unit test
+  `zstd_decodes_committed_fixture` (always-on, no env gate).
+
 ### `zdb` ground truth (the independent oracle values the tests assert against)
 
 From `sudo zdb -l zfs.img` (top-level nvlist config):

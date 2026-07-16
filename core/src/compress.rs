@@ -17,7 +17,7 @@
 //! - **`gzip_1..9`** (5-13) — zlib/DEFLATE via `flate2`.
 //! - **zle** (14) — zero-length encoding (run-length of zero bytes).
 //! - **zstd** (16) — ZFS frames zstd with a 4-byte-length + 4-byte-version header
-//!   before the standard zstd frame; decoded via the `zstd` crate.
+//!   before the standard zstd frame; decoded via the pure-Rust `ruzstd` crate.
 //!
 //! # Robustness
 //!
@@ -164,8 +164,9 @@ fn decompress_gzip(src: &[u8], lsize: usize) -> Result<Vec<u8>, ZfsError> {
     Ok(out)
 }
 
-/// zstd via the `zstd` crate. ZFS prepends a 4-byte length + 4-byte version to
-/// the standard zstd frame (`zfs_zstd` header); skip it and decode to `lsize`.
+/// zstd via the pure-Rust `ruzstd` crate. ZFS prepends a 4-byte length + 4-byte
+/// version to the standard zstd frame (`zfs_zstd` header); skip it and decode to
+/// `lsize`.
 fn decompress_zstd(src: &[u8], lsize: usize) -> Result<Vec<u8>, ZfsError> {
     // zfs_zstd header: uint32 c_len (BE) + uint32 packed(version|level) (BE),
     // then the standard zstd frame.
@@ -174,11 +175,13 @@ fn decompress_zstd(src: &[u8], lsize: usize) -> Result<Vec<u8>, ZfsError> {
         reason: "input shorter than the 8-byte zfs_zstd header",
     })?;
     let mut out = Vec::new();
-    let mut dec = zstd::stream::read::Decoder::new(frame)
+    // Bound the read at lsize so a lying stream cannot grow without limit; a real
+    // block decompresses to exactly lsize.
+    let mut dec = ruzstd::decoding::StreamingDecoder::new(frame)
         .map_err(|_| ZfsError::Decompress {
             codec: "zstd",
-            reason: "cannot initialise the zstd decoder",
-        })? // cov:unreachable: Decoder::new over an in-memory reader only fails on ctx allocation, never on input
+            reason: "bad zstd frame header",
+        })?
         .take(lsize as u64);
     dec.read_to_end(&mut out)
         .map_err(|_| ZfsError::Decompress {
@@ -346,12 +349,15 @@ mod unit {
     }
 
     #[test]
-    fn zstd_round_trip_independent_encoder() {
-        // Build a zfs_zstd-framed stream: 8-byte header + standard zstd frame.
-        let plain = b"zstd payload zstd payload zstd payload".repeat(8);
-        let frame = zstd::stream::encode_all(plain.as_slice(), 3).unwrap();
+    fn zstd_decodes_committed_fixture() {
+        // Independent oracle: the zstd CLI (v1.5.6) produced `zstd_frame.zst` from
+        // `zstd_frame.plain.txt`; our pure-Rust ruzstd path must recover it
+        // byte-for-byte (encoder != decoder — no self-encoded round-trip). Wrap
+        // the raw frame in the 8-byte zfs_zstd header the reader skips.
+        let frame = include_bytes!("../../tests/data/zstd_frame.zst");
+        let plain = include_bytes!("../../tests/data/zstd_frame.plain.txt");
         let mut framed = vec![0u8; 8]; // 4-byte len + 4-byte version (skipped)
-        framed.extend_from_slice(&frame);
+        framed.extend_from_slice(frame);
         let out = decompress(CompressType::Zstd, &framed, plain.len()).unwrap();
         assert_eq!(out, plain);
     }

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "From-scratch ZFS on-disk reader — vdev labels, XDR nvlist config, uberblock ring, block-pointer tree, dnodes/ZAP/DSL/ZPL, over any byte source. forbid(unsafe)"
+description = "From-scratch pure-Rust ZFS on-disk reader — vdev labels, XDR nvlist config, uberblock ring, block-pointer tree, dnodes/ZAP/DSL/ZPL, over any byte source. Single static binary, no C bindings, forbid(unsafe)"
 repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/zfs-forensic-core"
@@ -39,7 +39,7 @@ thiserror = { workspace = true }
 sha2 = { workspace = true }
 lz4_flex = { workspace = true }
 flate2 = { workspace = true }
-zstd = { workspace = true }
+ruzstd = { workspace = true }
 
 [dev-dependencies]
 # The P3 file-content integration test hashes recovered bytes to reconcile

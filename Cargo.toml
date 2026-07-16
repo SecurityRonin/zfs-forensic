@@ -7,15 +7,15 @@ members = ["core", "forensic"]
 # each keeps its own `version` inline.
 #
 # `rust-version` is the CI-verified MSRV floor. It is NOT the usual fleet library
-# floor (1.75/1.80): the batteries-included `zstd` extent decoder links libzstd's
-# C bindings (`zstd` -> `zstd-sys` -> `cc` -> `jobserver 0.1.35`, which declares
-# rust-version 1.85), and `lz4_flex 0.11` claims 1.81 — so the toolchain floor is
-# dictated by those deps, not our own code. Per the Batteries-Included policy
-# ("MSRV yields to capability") we keep the always-compiled zstd path and take the
-# 1.85 floor rather than feature-gate the decoder. Verified by the `msrv` CI job.
+# floor (1.75/1.80): the batteries-included pure-Rust zstd extent decoder
+# (`ruzstd 0.8`, no C FFI) declares rust-version 1.87, and `lz4_flex 0.11` claims
+# 1.81 — so the toolchain floor is dictated by `ruzstd`, not our own code. Per the
+# Batteries-Included policy ("MSRV yields to capability") we keep the
+# always-compiled zstd path and take the 1.87 floor rather than feature-gate the
+# decoder. Verified by the `msrv` CI job.
 [workspace.package]
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.87"
 license = "Apache-2.0"
 repository = "https://github.com/SecurityRonin/zfs-forensic"
 homepage = "https://github.com/SecurityRonin/zfs-forensic"
@@ -35,7 +35,9 @@ thiserror = "2"
 sha2 = "0.10"
 lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
 flate2 = "1"
-zstd = "0.13"
+# zstd: ruzstd, a pure-Rust decoder (no C FFI; keeps the tree unsafe-free and the
+# binary a single static artifact). Matches btrfs-core for fleet consistency.
+ruzstd = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -53,16 +53,15 @@ jobs:
 
   msrv:
     # zfs-forensic-core is a published library; its MSRV is a downstream-facing
-    # promise. The floor is 1.85 — dictated by `jobserver 0.1.35` (rust-version
-    # 1.85), a build-dependency of the batteries-included `zstd` decoder's C
-    # bindings (`zstd-sys` -> `cc` -> `jobserver`); `lz4_flex 0.11` also claims
+    # promise. The floor is 1.87 — dictated by the batteries-included pure-Rust
+    # `ruzstd 0.8` zstd decoder (rust-version 1.87); `lz4_flex 0.11` also claims
     # 1.81. Not our own code. An explicit version ref sets RUSTUP_TOOLCHAIN,
     # which beats rust-toolchain.toml's pin.
-    name: MSRV (1.85)
+    name: MSRV (1.87)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@1.85.0 # declared MSRV floor
+      - uses: dtolnay/rust-toolchain@1.87.0 # declared MSRV floor
       - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
       - run: cargo build -p zfs-forensic-core
 
