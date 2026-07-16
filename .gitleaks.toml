@@ -1,0 +1,17 @@
+# gitleaks configuration — extends the default ruleset and allowlists known
+# false positives. The committed ZFS fixtures under tests/data are raw on-disk
+# pool bytes (vdev labels, XDR nvlist configs, objset / dnode / ZAP / SA blocks);
+# their high-entropy regions (pool/vdev GUIDs, fletcher4/sha256 checksums, packed
+# ZAP entries) can trip gitleaks' generic high-entropy rules even though they
+# hold no secrets. Scoped to the fixture paths so real secrets anywhere else
+# still surface.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ZFS on-disk fixtures are pool bytes, not secrets"
+paths = [
+  '''tests/data/.*\.bin$''',
+  '''tests/data/.*\.txt$''',
+  '''tests/data/.*\.sha256$''',
+]

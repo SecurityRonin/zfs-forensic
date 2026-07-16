@@ -71,8 +71,8 @@ fn assert_zol061_bootstrap(label: &VdevLabel) {
     assert_eq!(ub.endian, Endian::Little, "little-endian pool (zdb -u)");
     assert_eq!(ub.version, 5000, "uberblock version (zdb -u)");
     assert_eq!(ub.txg, 72, "active uberblock txg (zdb -u)");
-    // ashift 9 -> slot_size 1 KiB -> 128 ring slots -> active slot = txg % 128.
-    assert_eq!(label.active_slot, 72 % 128, "active ring slot = txg % 128");
+    // ashift 9 -> slot_size 1 KiB -> 128 ring slots -> active slot = txg % 128 = 72.
+    assert_eq!(label.active_slot, 72, "active ring slot = txg % 128");
 }
 
 /// Tier-1 (always-on): the committed L0-label fixture from the real `zol-0.6.1`

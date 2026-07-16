@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on Monday"]
+  },
+  "github-actions": {
+    "pinDigests": true
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "cargo deps (minor+patch)"
+    },
+    {
+      "description": "Group fleet (SecurityRonin) crates into one PR wave.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["/^zfs-/", "forensicnomicon", "forensic-vfs"],
+      "groupName": "fleet crates"
+    }
+  ]
+}
