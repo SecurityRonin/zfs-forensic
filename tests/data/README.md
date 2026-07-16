@@ -14,18 +14,31 @@ detail. Cross-reference, do not duplicate.
 
 ## Validation tiers at a glance
 
-- **Tier-1 (bootstrap layer):** a **third-party** OpenZFS reference pool
-  (`openzfs/zfs-images` `zol-0.6.1`) with `zdb -l` as the independent answer key.
-  Neither the pool nor the ground truth is ours. This validates the per-vdev
-  bootstrap — vdev label + XDR nvlist config + uberblock ring — which reads on a
-  single raidz member **without** RAIDZ reconstruction. Fixture:
-  `zfs_zol061_vdev0_label0.bin`; test: `core/tests/tier1_zol061.rs`.
-- **Tier-2 (DMU / ZAP / ZPL / SA / file + F-CARVE layers):** a single-vdev
+- **Tier-1 (full read path — real `FreeBSD` ZFS-root):** an official, vendor-authored
+  **`FreeBSD` 14.3-RELEASE amd64 ZFS-on-root** VM image whose pool is a real
+  **single `disk` vdev** (`zdb -l`: `vdev_tree type 'disk'`, not raidz), so
+  `zfs-core`'s **entire** read path — label → uberblock → MOS → DSL → ZPL → SA →
+  **file content** — reads it **without** RAIDZ reconstruction and validates
+  against two independent OpenZFS oracles (`zdb` + a live read-only kernel
+  `zfs mount`). This upgrades the **file layer to Tier-1**: `zpl_read_path` reads
+  real third-party file bytes whose sha256 matches the oracle. Env-gated via
+  `ZFS_TIER1_FREEBSD`; test: `core/tests/tier1_freebsd.rs`.
+- **Tier-1 (bootstrap layer — raidz reference pool):** a **third-party** OpenZFS
+  reference pool (`openzfs/zfs-images` `zol-0.6.1`) with `zdb -l` as the
+  independent answer key. Neither the pool nor the ground truth is ours. This
+  validates the per-vdev bootstrap — vdev label + XDR nvlist config + uberblock
+  ring — which reads on a single raidz member **without** RAIDZ reconstruction.
+  Fixture: `zfs_zol061_vdev0_label0.bin`; test: `core/tests/tier1_zol061.rs`.
+  (Its MOS/ZAP/ZPL/SA/file layers still need parity reconstruction across the
+  four vdevs, deferred by `zfs-core` — so *this raidz pool's* data layers remain
+  out of reach; the `FreeBSD` single-vdev pool above is what carries those layers
+  to Tier-1.)
+- **Tier-2 (self-mint fixtures — the always-on regression corpus):** a single-vdev
   self-mint pool (`tpool` / `dtpool`), real OpenZFS output whose ground truth is
-  vouched for by `zdb` (a separate implementation), but authored by us. Reading
-  those layers on the raidz `zol-0.6.1` pool needs parity reconstruction across
-  the four vdevs, which `zfs-core` defers — so they stay Tier-2. All the
-  `zfs_*` fixtures below and the env-gated `zfs.img` / `zfs_snap.img` are Tier-2.
+  vouched for by `zdb` (a separate implementation), but authored by us. These
+  committed byte-exact fixtures remain the fast, deterministic, CI-friendly
+  regression backstop *under* the Tier-1 gates above. All the `zfs_*` fixtures
+  below and the env-gated `zfs.img` / `zfs_snap.img` are Tier-2.
 
 ## Committed fixtures
 
@@ -293,6 +306,57 @@ values stored big-endian; embedded-blkptr `BPE_PAYLOAD` = bytes `[0,48) ++ [56,8
 ++ [96,128)` of the 128-byte pointer, LZ4-framed with a 4-byte BE length prefix.
 
 ## Env-gated full images (NOT committed)
+
+### `FreeBSD` ZFS-root partition — pointed to by `ZFS_TIER1_FREEBSD` (Tier-1, full read path)
+
+- **Class:** `REAL-ext` (**Tier-1**). The `freebsd-zfs` GPT partition (5 GiB)
+  carved from an official, vendor-authored **`FreeBSD` 14.3-RELEASE amd64
+  ZFS-on-root** VM image. A genuine third-party artifact whose ground truth two
+  independent OpenZFS implementations confirm — `zdb` and a live read-only kernel
+  `zfs mount`. Its pool is a **single `disk` vdev** (not raidz), so `zfs-core`
+  reads its data blocks with no parity reconstruction: the whole path
+  label → uberblock → MOS → DSL → ZPL → SA → **file content** validates at Tier-1.
+- **Source:** <https://download.freebsd.org/releases/VM-IMAGES/14.3-RELEASE/amd64/Latest/FreeBSD-14.3-RELEASE-amd64-zfs.qcow2.xz>
+  (vendor-published **SHA256** `8bfcc2c6f3b3f259b0288b41db808328d98fe015f59432ffd8d69276829a9a8d`,
+  ~811 MiB). The `-zfs.qcow2` is used deliberately: the 14.3 `-zfs.raw` shipped
+  corrupt via a `makefs` bug (kernel panic on boot); the qcow2 is intact.
+- **Preparation (verbatim — Parallels Ubuntu 24.04 VM, `qemu-utils` +
+  `zfsutils-linux`; host `/tmp` shared at `/media/psf/tmp`):**
+  ```bash
+  # verify the vendor checksum, then decompress + convert to raw
+  sha256sum FreeBSD-14.3-RELEASE-amd64-zfs.qcow2.xz   # == 8bfcc2c6…9a8d
+  xz -dk FreeBSD-14.3-RELEASE-amd64-zfs.qcow2.xz
+  qemu-img convert -O raw FreeBSD-14.3-RELEASE-amd64-zfs.qcow2 freebsd.raw
+  parted -s freebsd.raw unit B print          # part 4 = freebsd-zfs (rootfs)
+  # byte-exact extract of the freebsd-zfs partition (start/size NOT MiB-aligned)
+  dd if=freebsd.raw of=freebsd-zfs.part bs=4M iflag=skip_bytes,count_bytes \
+     skip=1108026880 count=5368709120 status=none
+  ```
+  Partition offset **1108026880** bytes, size **5368709120** bytes.
+- **md5 of the extracted partition:** `22a711abfb33ca90e54676272034e216`.
+- **Independent oracles (`zdb` + kernel mount):** `zdb -l freebsd-zfs.part` →
+  pool `zroot`, `vdev_tree type 'disk'`, `ashift 12`, `vdev_children 1`,
+  `pool_guid 4016146626377348012`; `zdb -e -p <dir> -u zroot` → active uberblock
+  `magic 0x00bab10c` (LE), `version 5000`, **`txg 8`**. `FreeBSD` nests `/` in the
+  child dataset **`zroot/ROOT/default`** (ID 30, the boot environment), reached
+  via the DSL child-dir tree: root DSL dir (obj 3) `dd_child_dir_zapobj = 5` →
+  `ROOT` (DSL dir 22) `dd_child_dir_zapobj = 24` → `default` (DSL dir 27)
+  `dd_head_dataset_obj = 30`. A read-only kernel mount
+  (`zpool import -o readonly=on -R /mnt -d /dev zroot; zfs mount zroot/ROOT/default`)
+  and `zdb -R` block extraction both confirm the file hashes below.
+- **Ground truth (the full-Tier-1 gate):**
+  - real `/` listing (kernel `ls`, sorted): `.cshrc .profile COPYRIGHT bin boot dev
+    etc firstboot lib libexec media mnt net proc rescue root sbin tmp usr var`.
+  - `sha256(/.cshrc) = d1ba75d6e942aa2f17eb84061fe4edda1d17b9a9ab8e4e2ce3a19e650403b5d7`
+    (size 1011, stored **uncompressed** — `zdb`: `1000L/1000P`).
+  - `sha256(/COPYRIGHT) = 4ce916521645614401dd3f625bd534a2281c5e494fe50a631718de1a7c3fb064`
+    (size 6109, uncompressed — `2000L/2000P`).
+- **Consumed by:** `core/tests/tier1_freebsd.rs` →
+  `freebsd_zfs_root_full_read_path_matches_zdb_and_mount`, which walks the full
+  reader path (assembling only the child-dataset ZAP hop, which `zpl_objset` does
+  not yet expose, from exported primitives) and asserts every value above. Extract
+  the partition to `/tmp` (never under `~/src`) and set
+  `ZFS_TIER1_FREEBSD=/tmp/zfs-freebsd/freebsd-zfs.part`. Skips cleanly when unset.
 
 ### `zol-0.6.1/` four vdevs — pointed to by `ZFS_TIER1_ZOL` (Tier-1)
 

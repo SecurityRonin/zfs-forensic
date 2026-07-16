@@ -6,7 +6,57 @@ OpenZFS data. Correctness is tiered by **who vouches for the ground truth**
 answer key; Tier-2 is real OpenZFS output whose ground truth an *independent
 tool* (`zdb`) confirms, but where we authored the scenario.
 
-## Tier-1 — the bootstrap layer (third-party pool + `zdb`)
+**The full read path is Tier-1.** A real, vendor-authored **FreeBSD ZFS-root**
+image (single `disk` vdev) carries `zfs-core`'s *entire* path — label →
+uberblock → MOS → DSL → ZPL → SA → **file content** — to Tier-1: `zpl_read_path`
+reads genuine third-party file bytes whose sha256 matches two independent OpenZFS
+oracles. The self-mint fixtures below remain the always-on Tier-2 regression
+backstop *under* that gate.
+
+## Tier-1 — the full read path (real FreeBSD ZFS-root + `zdb` + kernel mount)
+
+**Artifact:** an official **FreeBSD 14.3-RELEASE amd64 ZFS-on-root** VM image
+(`FreeBSD-14.3-RELEASE-amd64-zfs.qcow2.xz`) — vendor-authored, so it is a genuine
+third-party pool with a third-party layout. Its pool `zroot` is a real **single
+`disk` vdev** (`zdb -l`: `vdev_tree type 'disk'`, not raidz), so `zfs-core` reads
+its data blocks with **no RAIDZ reconstruction**.
+
+- **Source:** <https://download.freebsd.org/releases/VM-IMAGES/14.3-RELEASE/amd64/Latest/FreeBSD-14.3-RELEASE-amd64-zfs.qcow2.xz>
+  (vendor SHA256 `8bfcc2c6f3b3f259b0288b41db808328d98fe015f59432ffd8d69276829a9a8d`).
+  The `-zfs.raw` variant shipped corrupt via a 14.3 `makefs` bug; the qcow2 is
+  intact.
+- **Independent oracles:** `zdb` (the ZFS debugger) **and** a live read-only
+  kernel `zfs mount` — two wholly separate OpenZFS implementations, which agree
+  on every file hash below.
+
+**What Tier-1 now covers — the whole reader path.** `zfs-core` walks the real
+partition end-to-end and reproduces exactly what the oracles report:
+
+| step | value | oracle |
+|---|---|---|
+| pool `name` | `zroot` | `zdb -l` |
+| `vdev_tree` type | `disk` (single vdev, **no raidz**) | `zdb -l` |
+| `ashift` / `vdev_children` | 12 / 1 | `zdb -l` |
+| active uberblock `magic` / `txg` | `0x00bab10c` (LE) / `8` | `zdb -u` |
+| root filesystem dataset | `zroot/ROOT/default` (child, via DSL child-dir tree) | `zdb -d` |
+| real `/` listing | `.cshrc .profile COPYRIGHT bin boot dev etc … usr var` (20 entries) | kernel `ls` |
+| `zpl_read_path("/.cshrc")` sha256 | `d1ba75d6…403b5d7` (1011 B, uncompressed) | `zdb -R` + mount |
+| `zpl_read_path("/COPYRIGHT")` sha256 | `4ce91652…c3fb064` (6109 B, uncompressed) | mount |
+
+`FreeBSD` nests `/` in the **`zroot/ROOT/default`** boot-environment dataset, a
+DSL *child* of the pool root. `zfs-core`'s `zpl_objset` resolves the pool's head
+dataset directly; the one child-dataset hop (root DSL dir →
+`dd_child_dir_zapobj` → `ROOT` → `default` → head dataset 30) is assembled in the
+test from `zfs-core`'s exported primitives (`mos_dnode` / `read_zap_object` /
+`zap_lookup` / `dsl_dataset_bp`) — every block read, checksum, and DSL/ZAP/ZPL/SA
+decode still runs inside `zfs-core`. (A high-level *named-child-dataset* navigator
+is the remaining API gap; the primitives to build it are already public.)
+
+- **Env-gated (`ZFS_TIER1_FREEBSD`):** the extracted `freebsd-zfs` partition
+  (md5 `22a711abfb33ca90e54676272034e216`, offset 1108026880, 5 GiB).
+- **Test:** `core/tests/tier1_freebsd.rs` (skips cleanly when unset).
+
+## Tier-1 — the bootstrap layer (third-party raidz pool + `zdb`)
 
 **Artifact:** `zol-0.6.1` from the OpenZFS project's own
 [`openzfs/zfs-images`](https://github.com/openzfs/zfs-images) — a `raidz1` pool
@@ -45,14 +95,23 @@ answer key. `VdevLabel::parse` on `zol-0.6.1/vdev0` reproduces exactly what
   bootstrap independently to the shared answer key.
 - **Test:** `core/tests/tier1_zol061.rs`.
 
-## Tier-2 — the DMU / ZAP / ZPL / SA / file + F-CARVE layers (self-mint + `zdb`)
+## Tier-2 — the always-on self-mint regression corpus (`zdb`)
 
-Reading the MOS, DMU, ZAP, ZPL, SA, and file-content layers of the `zol-0.6.1`
-raidz pool requires **RAIDZ parity reconstruction** across its four vdevs, which
-`zfs-core` deliberately defers (single-vdev / mirror in v1). Those layers are
-therefore validated at Tier-2 against a **single-vdev self-mint** pool
-(`tpool` — real OpenZFS 2.2.2 output, ashift 12), with `zdb` as the independent
-structural oracle for every asserted value:
+The full read path is proven at **Tier-1** on the FreeBSD single-vdev pool above.
+The committed byte-exact self-mint fixtures below (`tpool` / `dtpool` — real
+OpenZFS 2.2.2 output, ashift 12, `zdb` as the independent structural oracle)
+remain the fast, deterministic, always-on **regression backstop** *under* that
+gate — they run in CI with no large download and pin each layer's decode
+byte-for-byte:
+
+> **RAIDZ note (still current):** the *other* third-party pool, `zol-0.6.1`, is
+> **raidz1**, so reading *its* MOS/ZAP/ZPL/SA/file layers needs parity
+> reconstruction across four vdevs, which `zfs-core` defers (single-vdev / mirror
+> in v1). That is why `zol-0.6.1` validates only the bootstrap layer at Tier-1;
+> the FreeBSD *single-`disk`-vdev* pool is what carries the data layers to Tier-1
+> without reconstruction. RAIDZ reconstruction remains future work.
+
+Per-layer regression fixtures, each vs `zdb`:
 
 - **P0 label/nvlist/uberblock** — `core/tests/label.rs`, `core/tests/uberblock.rs`
   vs `zdb -l` / `zdb -uuuuu`.
