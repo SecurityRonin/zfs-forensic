@@ -81,9 +81,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        env:
-          GITLEAKS_CONFIG: .gitleaks.toml
+      # gitleaks-action requires a paid GITLEAKS_LICENSE for org repos; the CLI
+      # binary is unrestricted. Fetch the latest release and scan the tree.
+      - name: Install gitleaks
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r '.tag_name[1:]')
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar xz -C /tmp gitleaks
+      - name: Run gitleaks
+        run: /tmp/gitleaks detect --source . --config .gitleaks.toml
 
   coverage:
     name: Coverage (100% lines)
@@ -109,7 +115,7 @@ jobs:
       # invariant is ever broken. Such lines cannot be exercised by any test and
       # are exempt. The gate fails on any OTHER zero-hit line.
       - name: Generate lcov
-        run: cargo llvm-cov --lib --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
       - name: Enforce line coverage (unreachable defensive arms must carry // cov:unreachable)
         shell: bash
         run: |
