@@ -1,0 +1,84 @@
+name: Fuzz (scheduled)
+
+# Deep, time-boxed fuzzing of every target on a schedule (and on demand). PR CI
+# does not run libFuzzer; this workflow builds all targets and runs each for 10
+# minutes, uploading any crash. ZFS parses attacker-controllable disk images —
+# and the decompressors / checksum verifiers are a prime allocation-bomb / panic
+# surface — so a fuzz target per parsed structure is mandatory (Paranoid Gatekeeper).
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "forensic/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "forensic/**"
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast gate on every push/PR: every target must BUILD under nightly cargo-fuzz.
+  build:
+    name: Build all fuzz targets
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # `@nightly` is a channel ref — the documented toolchain-action pinning
+      # exception (a version/channel ref, not a floating third-party tag).
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz
+      - run: cargo +nightly fuzz build
+
+  # Deep run (schedule / manual): each target for 10 minutes.
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One target per parsed structure + the full-pipeline forensic target.
+        target:
+          [label, uberblock, blkptr, dnode, zap, dsl, sa, read_block, fuzz_forensic]
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz
+      - name: Seed corpus from committed fixtures
+        run: |
+          mkdir -p "fuzz/corpus/${{ matrix.target }}"
+          cp tests/data/*.bin "fuzz/corpus/${{ matrix.target }}/" 2>/dev/null || true
+      - name: Fuzz ${{ matrix.target }} (10 min)
+        run: cargo +nightly fuzz run "${{ matrix.target }}" -- -max_total_time=600 -rss_limit_mb=4096
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

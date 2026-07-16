@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Pinned to the rust-toolchain.toml version so fmt matches local exactly.
+      - uses: dtolnay/rust-toolchain@1.96.0 # matches rust-toolchain.toml
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@1.96.0 # matches rust-toolchain.toml
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@1.96.0 # matches rust-toolchain.toml
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      # The Tier-1 (ZFS_TIER1_ZOL) and Tier-2 (ZFS_ORACLE_IMG / ZFS_SNAP_ORACLE_IMG)
+      # oracle tests are env-gated and skip cleanly when the large images are
+      # absent, so CI stays green on the committed fixtures alone.
+      - run: cargo test --workspace --all-features
+
+  msrv:
+    # zfs-forensic-core is a published library; its MSRV is a downstream-facing
+    # promise. The floor is 1.85 — dictated by `jobserver 0.1.35` (rust-version
+    # 1.85), a build-dependency of the batteries-included `zstd` decoder's C
+    # bindings (`zstd-sys` -> `cc` -> `jobserver`); `lz4_flex 0.11` also claims
+    # 1.81. Not our own code. An explicit version ref sets RUSTUP_TOOLCHAIN,
+    # which beats rust-toolchain.toml's pin.
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@1.85.0 # declared MSRV floor
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - run: cargo build -p zfs-forensic-core
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
+        with:
+          command: check
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  coverage:
+    name: Coverage (100% lines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@1.96.0 # matches rust-toolchain.toml
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - uses: taiki-e/install-action@59012be0884e296ca2da49b530610e72c49039ad # v2.81.6
+        with:
+          tool: cargo-llvm-cov
+      # The library's I/O is generic over the byte source, so region/function
+      # metrics are structurally < 100% (per-monomorphization). The meaningful,
+      # monomorphization-robust invariant is that every executable source line is
+      # hit at least once.
+      #
+      # Exception — panic-free defence in depth: a line carrying a
+      # `// cov:unreachable` marker is a defensive guard (a `let-else { continue }`,
+      # a bounds-checked `.get()` fallback, etc.) provably unreachable under a
+      # dominating invariant, kept deliberately to stay panic-free if that
+      # invariant is ever broken. Such lines cannot be exercised by any test and
+      # are exempt. The gate fails on any OTHER zero-hit line.
+      - name: Generate lcov
+        run: cargo llvm-cov --lib --all-features --lcov --output-path lcov.info
+      - name: Enforce line coverage (unreachable defensive arms must carry // cov:unreachable)
+        shell: bash
+        run: |
+          fail=0
+          while IFS= read -r line; do
+            if [[ "$line" == SF:* ]]; then
+              f="${line#SF:}"
+            elif [[ "$line" =~ ^DA:([0-9]+),0$ ]]; then
+              n="${BASH_REMATCH[1]}"
+              src="$(sed -n "${n}p" "$f")"
+              if [[ "$src" == *cov:unreachable* ]]; then
+                echo "exempt (// cov:unreachable): $f:$n"
+              else
+                echo "::error::Uncovered line $f:$n:$src"
+                fail=1
+              fi
+            fi
+          done < lcov.info
+          if [[ "$fail" -ne 0 ]]; then exit 1; fi
+          echo "All executable lines covered, or annotated // cov:unreachable."
