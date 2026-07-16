@@ -1,0 +1,91 @@
+# Standalone workspace: the fuzz crate must not be pulled into the parent
+# (core/forensic) workspace, whose virtual root manifest is not a package.
+[workspace]
+
+[package]
+name = "zfs-forensic-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# The fuzzed structures (vdev label / nvlist, uberblock, blkptr, dnode / objset,
+# ZAP, DSL, SA, block decompression + checksum) are the reader's — they live in
+# zfs-forensic-core (imported as zfs_core).
+[dependencies.zfs-forensic-core]
+path = "../core"
+
+# The full inspect/audit + carve pipeline lives in zfs-forensic.
+[dependencies.zfs-forensic]
+path = "../forensic"
+
+[[bin]]
+name = "label"
+path = "fuzz_targets/label.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "uberblock"
+path = "fuzz_targets/uberblock.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blkptr"
+path = "fuzz_targets/blkptr.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dnode"
+path = "fuzz_targets/dnode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zap"
+path = "fuzz_targets/zap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dsl"
+path = "fuzz_targets/dsl.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sa"
+path = "fuzz_targets/sa.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "read_block"
+path = "fuzz_targets/read_block.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_forensic"
+path = "fuzz_targets/fuzz_forensic.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1
