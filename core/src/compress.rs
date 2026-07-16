@@ -422,6 +422,13 @@ mod unit {
         let mut bad_zstd = vec![0u8; 8];
         bad_zstd.extend_from_slice(&[0x28, 0xb5, 0x2f, 0xfd, 0xff, 0xff, 0xff, 0xff]);
         assert!(decompress(CompressType::Zstd, &bad_zstd, 64).is_err());
+        // A VALID zstd frame header but a TRUNCATED body: `StreamingDecoder::new`
+        // accepts the header, then `read_to_end` errors mid-frame — the
+        // "malformed zstd frame" arm, distinct from the bad-header arm above.
+        let good = include_bytes!("../../tests/data/zstd_frame.zst");
+        let mut truncated = vec![0u8; 8]; // zfs_zstd header the reader skips
+        truncated.extend_from_slice(&good[..good.len() / 2]);
+        assert!(decompress(CompressType::Zstd, &truncated, 4096).is_err());
         assert!(decompress(CompressType::Lzjb, &[], 8).is_err()); // no copymap
         assert!(decompress(CompressType::Zle, &[], 8).is_err()); // no ctrl
     }

@@ -40,6 +40,27 @@ detail. Cross-reference, do not duplicate.
   regression backstop *under* the Tier-1 gates above. All the `zfs_*` fixtures
   below and the env-gated `zfs.img` / `zfs_snap.img` are Tier-2.
 
+## Synthetic in-test image builders (always-on CI coverage — no committed bytes)
+
+Some higher-level read/analyze paths are exercised end-to-end only by the
+env-gated Tier-1/Tier-2 oracle images (the real 512 MiB / 256 MiB pools, not
+committed). Those images stay the independent **correctness** oracle. So CI —
+which does not carry them — would otherwise show those lines uncovered, the
+coverage gate is also fed by **always-on tests that assemble a tiny,
+self-consistent ZFS mini-image in code** (Tier-3 crafted; the builder writes the
+on-disk structures the reader parses, so the reader walks it hop by hop). No new
+`.bin` fixtures are committed; the builders reuse the real `zfs_label0.bin` only
+to anchor a genuine `rootbp`, then craft every block the pointer chain reaches.
+
+| test file | drives | mini-image shape |
+|-----------|--------|------------------|
+| `core/tests/zpl_synth.rs` | `zpl_objset`/`zpl_master_root`/`zpl_root_dir`/`zpl_list_dir`/`zpl_sa_context`/`zpl_attrs`/`zpl_read_file[_with]`/`zpl_lookup`/`zpl_read_path` + a 2-level `read_dnode_data` descent | label → MOS (obj dir → DSL dir → DSL dataset) → ZPL objset (master/root/SA registry+layouts, an SA-bonus file + a legacy-znode file) |
+| `forensic/tests/carve_synth.rs` | `recover_deleted` (snapshot deleted-file carving: `open_mos`/`dataset_root_names`/`dataset_zpl_objset`/`recover_from_snapshot`) | head dataset `ds_prev_snap_obj` → a snapshot dataset whose ZPL root holds a file absent from the live root |
+| `forensic/tests/sweep_synth.rs` | `audit_image` → `sweep_reachable_blkptrs` `ZFS-BLKPTR-CHECKSUM-MISMATCH` arm | MOS meta-dnode blkptr with a Fletcher4 checksum that mismatches its non-zero target block |
+
+Ground truth for these is the *construction* (what the builder writes is what the
+walk must return); the independent oracle remains the env-gated real pool above.
+
 ## Committed fixtures
 
 ### `zfs_zol061_vdev0_label0.bin` (Tier-1 — bootstrap layer)
