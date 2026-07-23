@@ -136,3 +136,18 @@ jobs:
           done < lcov.info
           if [[ "$fail" -ne 0 ]]; then exit 1; fi
           echo "All executable lines covered, or annotated // cov:unreachable."
+
+  vet:
+    name: Cargo Vet (supply-chain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-vet
+        uses: taiki-e/install-action@59012be0884e296ca2da49b530610e72c49039ad # v2.81.6
+        with:
+          tool: cargo-vet
+      - name: Fetch dependencies
+        run: cargo fetch
+      - name: Check supply chain
+        run: cargo vet --locked
