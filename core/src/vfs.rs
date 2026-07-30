@@ -630,7 +630,7 @@ impl FileSystem for ZfsFs {
         let obj = object_of(ino)?;
         let content = self.content(obj)?;
         let Ok(start) = usize::try_from(off) else {
-            return Ok(0);
+            return Ok(0); // cov:unreachable: u64 -> usize always succeeds on a 64-bit target; kept so a 32-bit build reads short instead of panicking.
         };
         let Some(tail) = content.get(start..) else {
             return Ok(0);
@@ -1133,7 +1133,7 @@ mod tests {
                 assert!(detail.contains("0x00bab10c"), "{detail}");
                 assert!(detail.contains("8388608"), "{detail}");
             }
-            other => panic!("expected Bootstrap, got {other:?}"),
+            other => panic!("expected Bootstrap, got {other:?}"), // cov:unreachable: an all-zero image has no uberblock magic, so open always fails at the ring stage; the arm is the match's required exhaustive branch
         }
     }
 
@@ -1152,7 +1152,7 @@ mod tests {
                 assert_eq!(stage, "zfs MOS objset block (uberblock rootbp)");
                 assert!(detail.contains("txg 99"), "{detail}");
             }
-            other => panic!("expected Bootstrap, got {other:?}"),
+            other => panic!("expected Bootstrap, got {other:?}"), // cov:unreachable: the rootbp names bytes past the image end, so open always fails at the MOS-objset-block stage; the arm is the match's required exhaustive branch
         }
     }
 
@@ -1190,7 +1190,7 @@ mod tests {
                 assert!(stage.contains("ZPL objset"), "{stage}");
                 assert!(detail.contains("root_dataset"), "{detail}");
             }
-            other => panic!("expected Bootstrap, got {other:?}"),
+            other => panic!("expected Bootstrap, got {other:?}"), // cov:unreachable: the all-zero MOS dnode array leaves object 1 absent, so open always fails at the ZPL-objset stage; the arm is the match's required exhaustive branch
         }
     }
 
@@ -1205,7 +1205,7 @@ mod tests {
                 assert_eq!(stage, "zfs dataset objset type");
                 assert!(detail.contains("is not DMU_OST_ZFS"), "{detail}");
             }
-            other => panic!("expected Bootstrap, got {other:?}"),
+            other => panic!("expected Bootstrap, got {other:?}"), // cov:unreachable: build_image(DMU_OST_META) always resolves a non-ZPL objset, so open always fails at the dataset-objset-type stage; the arm is the match's required exhaustive branch
         }
     }
 
@@ -1294,7 +1294,7 @@ mod tests {
             .map(|e| {
                 let e = e.expect("entry");
                 let FileId::Opaque(n) = e.id else {
-                    panic!("expected an opaque id")
+                    panic!("expected an opaque id") // cov:unreachable: read_dir builds every entry id as FileId::Opaque; the else arm is the let-else's required diverging branch
                 };
                 (String::from_utf8_lossy(&e.name).into_owned(), n, e.kind)
             })
@@ -1341,7 +1341,7 @@ mod tests {
         let fs = mounted();
         // An absent object id must not read as an empty directory.
         match fs.read_dir(FileId::Opaque(4096)) {
-            Ok(_) => panic!("an absent object must not read as an empty directory"),
+            Ok(_) => panic!("an absent object must not read as an empty directory"), // cov:unreachable: object 4096 lies past the crafted ZPL dnode array, so dir_entries always returns OutOfRange; the arm is the match's required exhaustive branch
             Err(e) => assert!(matches!(e, VfsError::OutOfRange { .. }), "{e:?}"),
         }
     }
@@ -1355,7 +1355,7 @@ mod tests {
         // matters is that it does not panic.
         match entries {
             Ok(n) => assert_eq!(n, 0, "a file's data block holds no ZAP entries"),
-            Err(e) => assert!(matches!(e, VfsError::Decode { .. }), "{e:?}"),
+            Err(e) => assert!(matches!(e, VfsError::Decode { .. }), "{e:?}"), // cov:unreachable: object 3's data block is a readable non-ZAP, so zap_list returns no entries rather than erroring; the arm keeps the weaker no-panic contract honest if that ever changes
         }
     }
 
@@ -1669,7 +1669,7 @@ mod tests {
                 assert_eq!(layer, "zfs");
                 assert!(detail.contains("test"), "{detail}");
             }
-            other => panic!("expected Decode, got {other:?}"),
+            other => panic!("expected Decode, got {other:?}"), // cov:unreachable: decode_err maps every ZfsError to VfsError::Decode; the arm is the match's required exhaustive branch
         }
     }
 
