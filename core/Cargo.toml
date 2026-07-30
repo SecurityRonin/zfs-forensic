@@ -34,8 +34,15 @@ exclude = [
 [lib]
 name = "zfs_core"
 
+[features]
+# The `forensic-vfs` adapter (`vfs::ZfsFs` + `vfs::zfs_probe`). Off by default so
+# the reader stays a leaf for a consumer that only wants the raw ZFS structures;
+# the forensic-vfs engine enables it to register ZFS in its openers registry.
+vfs = ["dep:forensic-vfs"]
+
 [dependencies]
 thiserror = { workspace = true }
+forensic-vfs = { workspace = true, optional = true }
 sha2 = { workspace = true }
 lz4_flex = { workspace = true }
 flate2 = { workspace = true }

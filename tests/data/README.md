@@ -57,9 +57,16 @@ to anchor a genuine `rootbp`, then craft every block the pointer chain reaches.
 | `core/tests/zpl_synth.rs` | `zpl_objset`/`zpl_master_root`/`zpl_root_dir`/`zpl_list_dir`/`zpl_sa_context`/`zpl_attrs`/`zpl_read_file[_with]`/`zpl_lookup`/`zpl_read_path` + a 2-level `read_dnode_data` descent | label → MOS (obj dir → DSL dir → DSL dataset) → ZPL objset (master/root/SA registry+layouts, an SA-bonus file + a legacy-znode file) |
 | `forensic/tests/carve_synth.rs` | `recover_deleted` (snapshot deleted-file carving: `open_mos`/`dataset_root_names`/`dataset_zpl_objset`/`recover_from_snapshot`) | head dataset `ds_prev_snap_obj` → a snapshot dataset whose ZPL root holds a file absent from the live root |
 | `forensic/tests/sweep_synth.rs` | `audit_image` → `sweep_reachable_blkptrs` `ZFS-BLKPTR-CHECKSUM-MISMATCH` arm | MOS meta-dnode blkptr with a Fletcher4 checksum that mismatches its non-zero target block |
+| `core/src/vfs.rs` (`mod tests`, builder `fn build_image` — `SYNTHETIC`) | the `vfs` feature's `forensic-vfs` adapter: `zfs_probe` + every `FileSystem` method on `ZfsFs` (`read_dir`/`lookup`/`meta`/`read_at`/`extents`/`read_link`), plus each `VfsError::Bootstrap` arm | an 8 MiB vdev: **crafted** nvlist config @16384 + two uberblock slots (txg 42 and 7, so highest-txg selection runs) → MOS (obj dir → DSL dir → DSL dataset) → ZPL objset with an SA-bonus file, a subdirectory, a slow symlink, and a legacy-znode file |
 
 Ground truth for these is the *construction* (what the builder writes is what the
 walk must return); the independent oracle remains the env-gated real pool above.
+
+`core/src/vfs.rs` is the one builder that also asserts against **real** bytes: its
+`zfs_probe_accepts_a_real_pool_config` test runs the prober over both committed
+real labels (`zfs_label0.bin`, Tier-2, and `zfs_zol061_vdev0_label0.bin`,
+Tier-1/`REAL-ext`), so ZFS detection is validated on pool configs neither we nor
+our encoder produced — not only on the crafted config the same file writes.
 
 ## Committed fixtures
 

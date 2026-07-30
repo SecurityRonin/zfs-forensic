@@ -72,6 +72,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "forensic-vfs"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "285cbb38f775a1c3c476e7e20bffea29eea6a62f73e0721957c04cb3867d1fa6"
+dependencies = [
+ "forensicnomicon-core",
+ "state-history-forensic",
+ "thiserror",
+]
+
+[[package]]
 name = "forensicnomicon"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -83,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "forensicnomicon-core"
-version = "1.1.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b81fa3bf717c97e0b7a877f30e6bf4abaf9dca751d970dab9292d03ae757d152"
+checksum = "21800c5e29085274fbb324be30790894481c9c5faf8c659b3d0d994840ca0941"
 
 [[package]]
 name = "forensicnomicon-data"
@@ -173,6 +184,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
+name = "state-history-forensic"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06d95f05c0dd49a5dfae0eb6cb6fae7bb3bd5c1f787300c94a3a5adecb44d98f"
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -240,6 +257,7 @@ name = "zfs-forensic-core"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "forensic-vfs",
  "lz4_flex",
  "ruzstd",
  "sha2",

@@ -38,6 +38,10 @@ flate2 = "1"
 # zstd: ruzstd, a pure-Rust decoder (no C FFI; keeps the tree unsafe-free and the
 # binary a single static artifact). Matches btrfs-core for fleet consistency.
 ruzstd = "0.8"
+# The VFS contract the `vfs` adapter feature implements, so a ZFS pool mounts
+# through the format-agnostic abstraction (ADR-0011). Optional: the reader itself
+# stays a leaf, and forensic-vfs's MSRV (1.85) sits under this repo's 1.87 floor.
+forensic-vfs = "0.7"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

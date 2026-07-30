@@ -38,6 +38,12 @@ mod uberblock;
 mod zap;
 mod zpl;
 
+/// The `forensic-vfs` adapter: `impl FileSystem for ZfsFs` plus the label-nvlist
+/// prober, so a ZFS pool mounts through the format-agnostic VFS abstraction
+/// (ADR-0011) instead of a consumer naming this crate.
+#[cfg(feature = "vfs")]
+pub mod vfs;
+
 pub use blkptr::{detect_blkptr_endian, Blkptr, Dva, BOOT_SKEW, BPE_PAYLOAD_SIZE};
 pub use bytes::{Endian, Reader};
 pub use checksum::ChecksumType;
