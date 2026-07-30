@@ -1,0 +1,43 @@
+pub mod zfs_forensic
+pub use zfs_forensic::Severity
+#[non_exhaustive] pub enum zfs_forensic::AnomalyKind
+pub zfs_forensic::AnomalyKind::BlkptrChecksumMismatch
+pub zfs_forensic::AnomalyKind::BlkptrChecksumMismatch::dva_offset: u64
+pub zfs_forensic::AnomalyKind::BlkptrChecksumMismatch::object_type: u8
+pub zfs_forensic::AnomalyKind::ImpossibleGeometry
+pub zfs_forensic::AnomalyKind::ImpossibleGeometry::field: &'static str
+pub zfs_forensic::AnomalyKind::ImpossibleGeometry::limit: u64
+pub zfs_forensic::AnomalyKind::ImpossibleGeometry::value: u64
+pub zfs_forensic::AnomalyKind::LabelDivergence
+pub zfs_forensic::AnomalyKind::LabelDivergence::field: &'static str
+pub zfs_forensic::AnomalyKind::LabelDivergence::label: usize
+pub zfs_forensic::AnomalyKind::LabelDivergence::reason: alloc::string::String
+pub zfs_forensic::AnomalyKind::UberblockChecksumMismatch
+pub zfs_forensic::AnomalyKind::UberblockChecksumMismatch::slot: usize
+pub zfs_forensic::AnomalyKind::UberblockChecksumMismatch::txg: u64
+impl zfs_forensic::AnomalyKind
+pub fn zfs_forensic::AnomalyKind::code(&self) -> &'static str
+pub fn zfs_forensic::AnomalyKind::note(&self) -> alloc::string::String
+pub fn zfs_forensic::AnomalyKind::severity(&self) -> forensicnomicon_core::report::Severity
+pub struct zfs_forensic::Anomaly
+pub zfs_forensic::Anomaly::code: &'static str
+pub zfs_forensic::Anomaly::kind: zfs_forensic::AnomalyKind
+pub zfs_forensic::Anomaly::note: alloc::string::String
+pub zfs_forensic::Anomaly::severity: forensicnomicon_core::report::Severity
+impl zfs_forensic::Anomaly
+pub fn zfs_forensic::Anomaly::new(zfs_forensic::AnomalyKind) -> Self
+impl forensicnomicon_core::report::Observation for zfs_forensic::Anomaly
+pub fn zfs_forensic::Anomaly::code(&self) -> &'static str
+pub fn zfs_forensic::Anomaly::evidence(&self) -> alloc::vec::Vec<forensicnomicon_core::report::Evidence>
+pub fn zfs_forensic::Anomaly::note(&self) -> alloc::string::String
+pub fn zfs_forensic::Anomaly::severity(&self) -> core::option::Option<forensicnomicon_core::report::Severity>
+pub struct zfs_forensic::RecoveredFile
+pub zfs_forensic::RecoveredFile::content: alloc::vec::Vec<u8>
+pub zfs_forensic::RecoveredFile::content_sha256: alloc::string::String
+pub zfs_forensic::RecoveredFile::inode: u64
+pub zfs_forensic::RecoveredFile::path: alloc::string::String
+pub zfs_forensic::RecoveredFile::size: u64
+pub zfs_forensic::RecoveredFile::source: alloc::string::String
+pub fn zfs_forensic::audit_findings(&[u8], &str) -> alloc::vec::Vec<forensicnomicon_core::report::Finding>
+pub fn zfs_forensic::audit_image(&[u8]) -> alloc::vec::Vec<zfs_forensic::Anomaly>
+pub fn zfs_forensic::recover_deleted(&[u8]) -> alloc::vec::Vec<zfs_forensic::RecoveredFile>

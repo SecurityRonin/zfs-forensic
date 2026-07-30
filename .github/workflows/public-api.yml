@@ -1,0 +1,50 @@
+name: public-api
+
+# Tripwire for accidental public-API changes in the published libraries. The
+# committed baselines under public-api/*.txt are the source of truth; this job
+# regenerates each crate's surface and fails if it drifts. When a change is
+# intentional, regenerate the baseline in the same PR (command printed on failure)
+# — that makes every API change a conscious, reviewable edit.
+#
+# Complements `semver` (which classifies a change as breaking against crates.io);
+# this job catches ANY change, additive included, before it reaches a release.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  public-api:
+    runs-on: ubuntu-latest
+    env:
+      # Pin the tool so its textual output format is stable across CI runs (matches
+      # the version used to generate the committed baselines).
+      CARGO_PUBLIC_API_VERSION: "0.52.0"
+      OMIT: "blanket-impls,auto-trait-impls,auto-derived-impls"
+      CRATES: "zfs-forensic-core zfs-forensic"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Install nightly (cargo-public-api needs rustdoc JSON)
+        run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
+      - name: Install cargo-public-api
+        run: cargo install cargo-public-api --locked --version "$CARGO_PUBLIC_API_VERSION"
+      - name: Check public API against committed baselines
+        run: |
+          fail=0
+          for crate in $CRATES; do
+            echo "::group::$crate"
+            cargo public-api -p "$crate" --all-features --omit "$OMIT" > "/tmp/$crate.txt"
+            if ! diff -u "public-api/$crate.txt" "/tmp/$crate.txt"; then
+              echo "::error::Public API of $crate changed. If intentional, regenerate the baseline in this PR:"
+              echo "  cargo public-api -p $crate --all-features --omit $OMIT > public-api/$crate.txt"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail

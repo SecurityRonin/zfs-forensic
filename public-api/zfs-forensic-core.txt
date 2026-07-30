@@ -1,0 +1,371 @@
+pub mod zfs_core
+pub mod zfs_core::bytes
+pub enum zfs_core::bytes::Endian
+pub zfs_core::bytes::Endian::Big
+pub zfs_core::bytes::Endian::Little
+pub struct zfs_core::bytes::Reader
+impl zfs_core::bytes::Reader
+pub fn zfs_core::bytes::Reader::endian(self) -> zfs_core::bytes::Endian
+pub fn zfs_core::bytes::Reader::new(zfs_core::bytes::Endian) -> Self
+pub fn zfs_core::bytes::Reader::u16(self, &[u8], usize) -> u16
+pub fn zfs_core::bytes::Reader::u32(self, &[u8], usize) -> u32
+pub fn zfs_core::bytes::Reader::u64(self, &[u8], usize) -> u64
+pub fn zfs_core::bytes::be_u16(&[u8], usize) -> u16
+pub fn zfs_core::bytes::be_u32(&[u8], usize) -> u32
+pub fn zfs_core::bytes::be_u64(&[u8], usize) -> u64
+pub fn zfs_core::bytes::le_u16(&[u8], usize) -> u16
+pub fn zfs_core::bytes::le_u32(&[u8], usize) -> u32
+pub fn zfs_core::bytes::le_u64(&[u8], usize) -> u64
+pub fn zfs_core::bytes::u8_at(&[u8], usize) -> u8
+pub fn zfs_core::bytes::xdr_i32(&[u8], usize) -> i32
+pub fn zfs_core::bytes::xdr_u64(&[u8], usize) -> u64
+pub mod zfs_core::checksum
+#[non_exhaustive] pub enum zfs_core::checksum::ChecksumType
+pub zfs_core::checksum::ChecksumType::Fletcher2
+pub zfs_core::checksum::ChecksumType::Fletcher4
+pub zfs_core::checksum::ChecksumType::GangHeader
+pub zfs_core::checksum::ChecksumType::Inherit
+pub zfs_core::checksum::ChecksumType::Label
+pub zfs_core::checksum::ChecksumType::Off
+pub zfs_core::checksum::ChecksumType::On
+pub zfs_core::checksum::ChecksumType::Other(u8)
+pub zfs_core::checksum::ChecksumType::Sha256
+pub zfs_core::checksum::ChecksumType::Zilog
+impl zfs_core::checksum::ChecksumType
+pub fn zfs_core::checksum::ChecksumType::from_raw(u8) -> Self
+pub fn zfs_core::checksum::ChecksumType::raw(self) -> u8
+pub fn zfs_core::checksum::fletcher2(&[u8], zfs_core::bytes::Endian) -> [u64; 4]
+pub fn zfs_core::checksum::fletcher4(&[u8], zfs_core::bytes::Endian) -> [u64; 4]
+pub fn zfs_core::checksum::sha256(&[u8]) -> [u64; 4]
+pub fn zfs_core::checksum::verify(zfs_core::checksum::ChecksumType, zfs_core::bytes::Endian, &[u8], [u64; 4]) -> core::option::Option<bool>
+pub mod zfs_core::compress
+#[non_exhaustive] pub enum zfs_core::compress::CompressType
+pub zfs_core::compress::CompressType::Empty
+pub zfs_core::compress::CompressType::Gzip(u8)
+pub zfs_core::compress::CompressType::Inherit
+pub zfs_core::compress::CompressType::Lz4
+pub zfs_core::compress::CompressType::Lzjb
+pub zfs_core::compress::CompressType::Off
+pub zfs_core::compress::CompressType::On
+pub zfs_core::compress::CompressType::Other(u8)
+pub zfs_core::compress::CompressType::Zle
+pub zfs_core::compress::CompressType::Zstd
+impl zfs_core::compress::CompressType
+pub fn zfs_core::compress::CompressType::from_raw(u8) -> Self
+pub fn zfs_core::compress::CompressType::raw(self) -> u8
+pub fn zfs_core::compress::decompress(zfs_core::compress::CompressType, &[u8], usize) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub mod zfs_core::vfs
+pub struct zfs_core::vfs::ZfsFs
+impl zfs_core::vfs::ZfsFs
+pub fn zfs_core::vfs::ZfsFs::open(&forensic_vfs::source::DynSource) -> forensic_vfs::error::VfsResult<Self>
+impl core::fmt::Debug for zfs_core::vfs::ZfsFs
+pub fn zfs_core::vfs::ZfsFs::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl forensic_vfs::fs::FileSystem for zfs_core::vfs::ZfsFs
+pub fn zfs_core::vfs::ZfsFs::deleted(&self) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::NodeStream>
+pub fn zfs_core::vfs::ZfsFs::extents(&self, forensicnomicon_core::file_id::FileId, forensic_vfs::fs::StreamId) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::ExtentStream>
+pub fn zfs_core::vfs::ZfsFs::kind(&self) -> forensicnomicon_core::filesystems::FsKind
+pub fn zfs_core::vfs::ZfsFs::lookup(&self, forensicnomicon_core::file_id::FileId, &[u8]) -> forensic_vfs::error::VfsResult<core::option::Option<forensicnomicon_core::file_id::FileId>>
+pub fn zfs_core::vfs::ZfsFs::meta(&self, forensicnomicon_core::file_id::FileId) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::FsMeta>
+pub fn zfs_core::vfs::ZfsFs::read_at(&self, forensicnomicon_core::file_id::FileId, forensic_vfs::fs::StreamId, u64, &mut [u8]) -> forensic_vfs::error::VfsResult<usize>
+pub fn zfs_core::vfs::ZfsFs::read_dir(&self, forensicnomicon_core::file_id::FileId) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::DirStream>
+pub fn zfs_core::vfs::ZfsFs::read_link(&self, forensicnomicon_core::file_id::FileId, usize) -> forensic_vfs::error::VfsResult<alloc::vec::Vec<u8>>
+pub fn zfs_core::vfs::ZfsFs::root(&self) -> forensicnomicon_core::file_id::FileId
+pub fn zfs_core::vfs::ZfsFs::sector_sizes(&self) -> forensic_vfs::fs::SectorSizes
+pub fn zfs_core::vfs::ZfsFs::timestamp_zone(&self) -> forensic_vfs::fs::TimeZonePolicy
+pub fn zfs_core::vfs::ZfsFs::unallocated(&self) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::ExtentStream>
+pub fn zfs_core::vfs::ZfsFs::volume_label(&self) -> core::option::Option<alloc::string::String>
+pub fn zfs_core::vfs::open(&forensic_vfs::source::DynSource) -> forensic_vfs::error::VfsResult<alloc::sync::Arc<dyn forensic_vfs::fs::FileSystem>>
+pub fn zfs_core::vfs::zfs_probe(&forensic_vfs::registry::SniffWindow<'_>) -> forensic_vfs::registry::Confidence
+#[non_exhaustive] pub enum zfs_core::ChecksumType
+pub zfs_core::ChecksumType::Fletcher2
+pub zfs_core::ChecksumType::Fletcher4
+pub zfs_core::ChecksumType::GangHeader
+pub zfs_core::ChecksumType::Inherit
+pub zfs_core::ChecksumType::Label
+pub zfs_core::ChecksumType::Off
+pub zfs_core::ChecksumType::On
+pub zfs_core::ChecksumType::Other(u8)
+pub zfs_core::ChecksumType::Sha256
+pub zfs_core::ChecksumType::Zilog
+impl zfs_core::checksum::ChecksumType
+pub fn zfs_core::checksum::ChecksumType::from_raw(u8) -> Self
+pub fn zfs_core::checksum::ChecksumType::raw(self) -> u8
+#[non_exhaustive] pub enum zfs_core::CompressType
+pub zfs_core::CompressType::Empty
+pub zfs_core::CompressType::Gzip(u8)
+pub zfs_core::CompressType::Inherit
+pub zfs_core::CompressType::Lz4
+pub zfs_core::CompressType::Lzjb
+pub zfs_core::CompressType::Off
+pub zfs_core::CompressType::On
+pub zfs_core::CompressType::Other(u8)
+pub zfs_core::CompressType::Zle
+pub zfs_core::CompressType::Zstd
+impl zfs_core::compress::CompressType
+pub fn zfs_core::compress::CompressType::from_raw(u8) -> Self
+pub fn zfs_core::compress::CompressType::raw(self) -> u8
+#[non_exhaustive] pub enum zfs_core::DmuType
+pub zfs_core::DmuType::Bpobj
+pub zfs_core::DmuType::DirectoryContents
+pub zfs_core::DmuType::Dnode
+pub zfs_core::DmuType::DslDataset
+pub zfs_core::DmuType::DslDir
+pub zfs_core::DmuType::DslDirChildMap
+pub zfs_core::DmuType::MasterNode
+pub zfs_core::DmuType::None
+pub zfs_core::DmuType::ObjectArray
+pub zfs_core::DmuType::ObjectDirectory
+pub zfs_core::DmuType::Objset
+pub zfs_core::DmuType::Other(u8)
+pub zfs_core::DmuType::PackedNvlist
+pub zfs_core::DmuType::PlainFileContents
+pub zfs_core::DmuType::Sa
+pub zfs_core::DmuType::SpaceMap
+pub zfs_core::DmuType::Znode
+impl zfs_core::DmuType
+pub fn zfs_core::DmuType::from_raw(u8) -> Self
+pub fn zfs_core::DmuType::raw(self) -> u8
+pub enum zfs_core::Endian
+pub zfs_core::Endian::Big
+pub zfs_core::Endian::Little
+pub enum zfs_core::NvValue
+pub zfs_core::NvValue::NvList(zfs_core::NvList)
+pub zfs_core::NvValue::Str(alloc::string::String)
+pub zfs_core::NvValue::U64(u64)
+#[non_exhaustive] pub enum zfs_core::ZfsError
+pub zfs_core::ZfsError::AllocationBomb
+pub zfs_core::ZfsError::AllocationBomb::cap: u64
+pub zfs_core::ZfsError::AllocationBomb::field: &'static str
+pub zfs_core::ZfsError::AllocationBomb::value: u64
+pub zfs_core::ZfsError::BadNvlistEncoding
+pub zfs_core::ZfsError::BadNvlistEncoding::encoding: u8
+pub zfs_core::ZfsError::BadNvlistEncoding::offset: usize
+pub zfs_core::ZfsError::Decompress
+pub zfs_core::ZfsError::Decompress::codec: &'static str
+pub zfs_core::ZfsError::Decompress::reason: &'static str
+pub zfs_core::ZfsError::EmbeddedBlkptr
+pub zfs_core::ZfsError::EmbeddedBlkptr::lsize: u64
+pub zfs_core::ZfsError::NoUberblock
+pub zfs_core::ZfsError::NoUberblock::scanned: usize
+pub zfs_core::ZfsError::NvlistBomb
+pub zfs_core::ZfsError::NvlistBomb::cap: u64
+pub zfs_core::ZfsError::NvlistBomb::field: &'static str
+pub zfs_core::ZfsError::NvlistBomb::value: u64
+pub zfs_core::ZfsError::OutOfRange
+pub zfs_core::ZfsError::OutOfRange::max: u64
+pub zfs_core::ZfsError::OutOfRange::value: u64
+pub zfs_core::ZfsError::OutOfRange::what: &'static str
+pub zfs_core::ZfsError::Truncated
+pub zfs_core::ZfsError::Truncated::have: usize
+pub zfs_core::ZfsError::Truncated::need: usize
+pub zfs_core::ZfsError::Truncated::structure: &'static str
+pub zfs_core::ZfsError::UnsupportedCompression
+pub zfs_core::ZfsError::UnsupportedCompression::value: u8
+pub struct zfs_core::Blkptr
+pub zfs_core::Blkptr::byteorder: zfs_core::bytes::Endian
+pub zfs_core::Blkptr::checksum: u8
+pub zfs_core::Blkptr::checksum_words: [u64; 4]
+pub zfs_core::Blkptr::compression: u8
+pub zfs_core::Blkptr::dedup: bool
+pub zfs_core::Blkptr::dvas: [zfs_core::Dva; 3]
+pub zfs_core::Blkptr::embedded: bool
+pub zfs_core::Blkptr::embedded_lsize: u32
+pub zfs_core::Blkptr::embedded_payload: [u8; 112]
+pub zfs_core::Blkptr::embedded_psize: u32
+pub zfs_core::Blkptr::fill: u64
+pub zfs_core::Blkptr::level: u8
+pub zfs_core::Blkptr::logical_birth: u64
+pub zfs_core::Blkptr::lsize_raw: u32
+pub zfs_core::Blkptr::object_type: u8
+pub zfs_core::Blkptr::psize_raw: u32
+impl zfs_core::Blkptr
+pub fn zfs_core::Blkptr::embedded_data(&self) -> &[u8]
+pub fn zfs_core::Blkptr::is_hole(self) -> bool
+pub fn zfs_core::Blkptr::lsize_bytes(self) -> usize
+pub fn zfs_core::Blkptr::parse(&[u8], zfs_core::bytes::Endian) -> Self
+pub fn zfs_core::Blkptr::psize_bytes(self) -> usize
+impl core::default::Default for zfs_core::Blkptr
+pub fn zfs_core::Blkptr::default() -> Self
+pub struct zfs_core::BlkptrSummary
+pub zfs_core::BlkptrSummary::compression: u8
+pub zfs_core::BlkptrSummary::dvas: [zfs_core::Dva; 3]
+pub zfs_core::BlkptrSummary::embedded: bool
+pub zfs_core::BlkptrSummary::level: u8
+pub zfs_core::BlkptrSummary::lsize_sectors: u32
+pub zfs_core::BlkptrSummary::object_type: u8
+pub zfs_core::BlkptrSummary::psize_sectors: u32
+pub struct zfs_core::Block
+pub zfs_core::Block::checksum_valid: core::option::Option<bool>
+pub zfs_core::Block::data: alloc::vec::Vec<u8>
+pub zfs_core::Block::dva_used: u8
+pub struct zfs_core::Dnode
+pub zfs_core::Dnode::blkptrs: alloc::vec::Vec<zfs_core::Blkptr>
+pub zfs_core::Dnode::bonus: alloc::vec::Vec<u8>
+pub zfs_core::Dnode::dn_bonuslen: u16
+pub zfs_core::Dnode::dn_bonustype: u8
+pub zfs_core::Dnode::dn_checksum: u8
+pub zfs_core::Dnode::dn_compress: u8
+pub zfs_core::Dnode::dn_datablkszsec: u16
+pub zfs_core::Dnode::dn_extra_slots: u8
+pub zfs_core::Dnode::dn_flags: u8
+pub zfs_core::Dnode::dn_indblkshift: u8
+pub zfs_core::Dnode::dn_maxblkid: u64
+pub zfs_core::Dnode::dn_nblkptr: u8
+pub zfs_core::Dnode::dn_nlevels: u8
+pub zfs_core::Dnode::dn_type: u8
+pub zfs_core::Dnode::dn_used: u64
+pub zfs_core::Dnode::endian: zfs_core::bytes::Endian
+impl zfs_core::Dnode
+pub fn zfs_core::Dnode::blkptr(&self, usize) -> core::option::Option<&zfs_core::Blkptr>
+pub fn zfs_core::Dnode::data_block_size(&self) -> usize
+pub fn zfs_core::Dnode::indirect_block_size(&self) -> usize
+pub fn zfs_core::Dnode::parse(&[u8], zfs_core::bytes::Endian) -> core::option::Option<Self>
+pub struct zfs_core::Dva
+pub zfs_core::Dva::asize_sectors: u32
+pub zfs_core::Dva::gang: bool
+pub zfs_core::Dva::offset_sectors: u64
+pub zfs_core::Dva::vdev: u32
+impl zfs_core::Dva
+pub const zfs_core::Dva::BOOT_SKEW: u64
+pub fn zfs_core::Dva::is_empty(self) -> bool
+pub fn zfs_core::Dva::physical_byte_offset(self) -> u64
+pub struct zfs_core::NvList
+impl zfs_core::NvList
+pub fn zfs_core::NvList::get(&self, &str) -> core::option::Option<&zfs_core::NvValue>
+pub fn zfs_core::NvList::get_nvlist(&self, &str) -> core::option::Option<&zfs_core::NvList>
+pub fn zfs_core::NvList::get_str(&self, &str) -> core::option::Option<&str>
+pub fn zfs_core::NvList::get_u64(&self, &str) -> core::option::Option<u64>
+pub fn zfs_core::NvList::pairs(&self) -> &[(alloc::string::String, zfs_core::NvValue)]
+pub fn zfs_core::NvList::vdev_tree(&self) -> core::option::Option<zfs_core::VdevTree>
+pub struct zfs_core::ObjsetPhys
+pub zfs_core::ObjsetPhys::endian: zfs_core::bytes::Endian
+pub zfs_core::ObjsetPhys::meta_dnode: zfs_core::Dnode
+pub zfs_core::ObjsetPhys::os_flags: u64
+pub zfs_core::ObjsetPhys::os_type: u64
+impl zfs_core::ObjsetPhys
+pub fn zfs_core::ObjsetPhys::parse(&[u8], zfs_core::bytes::Endian) -> core::result::Result<Self, zfs_core::ZfsError>
+pub struct zfs_core::Reader
+impl zfs_core::bytes::Reader
+pub fn zfs_core::bytes::Reader::endian(self) -> zfs_core::bytes::Endian
+pub fn zfs_core::bytes::Reader::new(zfs_core::bytes::Endian) -> Self
+pub fn zfs_core::bytes::Reader::u16(self, &[u8], usize) -> u16
+pub fn zfs_core::bytes::Reader::u32(self, &[u8], usize) -> u32
+pub fn zfs_core::bytes::Reader::u64(self, &[u8], usize) -> u64
+pub struct zfs_core::SaAttrDesc
+pub zfs_core::SaAttrDesc::bswap: u8
+pub zfs_core::SaAttrDesc::id: u16
+pub zfs_core::SaAttrDesc::size: u16
+pub struct zfs_core::SaLayouts
+impl zfs_core::SaLayouts
+pub fn zfs_core::SaLayouts::attr_ids(&self, u64) -> core::option::Option<&[u16]>
+pub fn zfs_core::SaLayouts::is_empty(&self) -> bool
+pub fn zfs_core::SaLayouts::len(&self) -> usize
+pub struct zfs_core::SaRegistry
+impl zfs_core::SaRegistry
+pub fn zfs_core::SaRegistry::by_name(&self, &str) -> core::option::Option<zfs_core::SaAttrDesc>
+pub fn zfs_core::SaRegistry::is_empty(&self) -> bool
+pub fn zfs_core::SaRegistry::len(&self) -> usize
+pub fn zfs_core::SaRegistry::size_of(&self, u16) -> core::option::Option<u16>
+pub struct zfs_core::Uberblock
+pub zfs_core::Uberblock::endian: zfs_core::bytes::Endian
+pub zfs_core::Uberblock::guid_sum: u64
+pub zfs_core::Uberblock::magic: u64
+pub zfs_core::Uberblock::rootbp: zfs_core::BlkptrSummary
+pub zfs_core::Uberblock::timestamp: u64
+pub zfs_core::Uberblock::txg: u64
+pub zfs_core::Uberblock::version: u64
+impl zfs_core::Uberblock
+pub fn zfs_core::Uberblock::parse(&[u8]) -> core::option::Option<Self>
+impl zfs_core::Uberblock
+pub fn zfs_core::Uberblock::rootbp_full(&self) -> zfs_core::Blkptr
+pub struct zfs_core::VdevLabel
+pub zfs_core::VdevLabel::active_slot: usize
+pub zfs_core::VdevLabel::active_uberblock: zfs_core::Uberblock
+pub zfs_core::VdevLabel::config: zfs_core::NvList
+impl zfs_core::VdevLabel
+pub fn zfs_core::VdevLabel::parse(&[u8]) -> core::result::Result<Self, zfs_core::ZfsError>
+pub struct zfs_core::VdevTree
+pub zfs_core::VdevTree::ashift: u64
+pub zfs_core::VdevTree::asize: u64
+pub zfs_core::VdevTree::guid: u64
+pub zfs_core::VdevTree::vdev_type: alloc::string::String
+impl zfs_core::VdevTree
+pub fn zfs_core::VdevTree::from_nvlist(&zfs_core::NvList) -> Self
+pub struct zfs_core::ZplAttrs
+pub zfs_core::ZplAttrs::atime: (u64, u64)
+pub zfs_core::ZplAttrs::crtime: (u64, u64)
+pub zfs_core::ZplAttrs::ctime: (u64, u64)
+pub zfs_core::ZplAttrs::flags: u64
+pub zfs_core::ZplAttrs::gen: u64
+pub zfs_core::ZplAttrs::gid: u64
+pub zfs_core::ZplAttrs::links: u64
+pub zfs_core::ZplAttrs::mode: u64
+pub zfs_core::ZplAttrs::mtime: (u64, u64)
+pub zfs_core::ZplAttrs::parent: u64
+pub zfs_core::ZplAttrs::size: u64
+pub zfs_core::ZplAttrs::uid: u64
+pub zfs_core::ZplAttrs::unknown_attr_ids: alloc::vec::Vec<u16>
+pub const zfs_core::BLKPTR_SIZE: usize
+pub const zfs_core::BOOT_SKEW: u64
+pub const zfs_core::BPE_PAYLOAD_SIZE: usize
+pub const zfs_core::DMU_OST_META: u64
+pub const zfs_core::DMU_OST_ZFS: u64
+pub const zfs_core::DMU_OT_SA: u8
+pub const zfs_core::DMU_OT_ZNODE: u8
+pub const zfs_core::DNODE_CORE_SIZE: usize
+pub const zfs_core::DNODE_SIZE: usize
+pub const zfs_core::LABEL_SIZE: usize
+pub const zfs_core::MAX_BLOCK_SIZE: usize
+pub const zfs_core::MAX_INDIRECT_LEVELS: u8
+pub const zfs_core::NVLIST_OFFSET: usize
+pub const zfs_core::NVLIST_SIZE: usize
+pub const zfs_core::SA_LAYOUTS_NAME: &str
+pub const zfs_core::SA_MAGIC: u32
+pub const zfs_core::SA_REGISTRY_NAME: &str
+pub const zfs_core::SA_TIME_SIZE: usize
+pub const zfs_core::UBERBLOCK_MAGIC: u64
+pub const zfs_core::UBERBLOCK_MIN_SHIFT: u32
+pub const zfs_core::UBERBLOCK_RING_OFFSET: usize
+pub const zfs_core::UBERBLOCK_RING_SIZE: usize
+pub const zfs_core::UB_MMP_MAGIC: u64
+pub const zfs_core::VDEV_BOOT_HEADER_SIZE: usize
+pub const zfs_core::VDEV_PAD_SIZE: usize
+pub const zfs_core::ZAP_LEAF_MAGIC: u32
+pub const zfs_core::ZAP_MAGIC: u64
+pub const zfs_core::ZBT_HEADER: u64
+pub const zfs_core::ZBT_LEAF: u64
+pub const zfs_core::ZBT_MICRO: u64
+pub const zfs_core::ZNODE_PHYS_SIZE: usize
+pub const zfs_core::ZPL_DIRENT_OBJ_MASK: u64
+pub const zfs_core::ZPL_MASTER_NODE_OBJ: u64
+pub const zfs_core::ZPL_ROOT_NAME: &str
+pub const zfs_core::ZPL_SA_ATTRS_NAME: &str
+pub fn zfs_core::active_uberblock(&[u8], usize, usize) -> core::option::Option<(zfs_core::Uberblock, usize)>
+pub fn zfs_core::decode_sa_bonus(&[u8], &zfs_core::SaRegistry, &zfs_core::SaLayouts, zfs_core::bytes::Endian) -> core::option::Option<zfs_core::ZplAttrs>
+pub fn zfs_core::decode_znode_phys(&[u8], zfs_core::bytes::Endian) -> core::option::Option<zfs_core::ZplAttrs>
+pub fn zfs_core::detect_blkptr_endian(&[u8]) -> zfs_core::bytes::Endian
+pub fn zfs_core::dsl_dataset_bp(&zfs_core::Dnode) -> zfs_core::Blkptr
+pub fn zfs_core::dsl_dataset_prev_snap(&zfs_core::Dnode) -> u64
+pub fn zfs_core::dsl_dir_head_dataset(&zfs_core::Dnode) -> u64
+pub fn zfs_core::label_offsets(u64) -> ([u64; 2], core::option::Option<[u64; 2]>)
+pub fn zfs_core::mos_dnode(&[u8], &zfs_core::ObjsetPhys, u64) -> core::option::Option<zfs_core::Dnode>
+pub fn zfs_core::nvlist_parse(&[u8]) -> core::result::Result<zfs_core::NvList, zfs_core::ZfsError>
+pub fn zfs_core::parse_sa_layouts(&[u8]) -> zfs_core::SaLayouts
+pub fn zfs_core::parse_sa_registry(&[u8]) -> zfs_core::SaRegistry
+pub fn zfs_core::read_block(&[u8], &zfs_core::Blkptr) -> core::result::Result<zfs_core::Block, zfs_core::ZfsError>
+pub fn zfs_core::read_dnode_data(&[u8], &zfs_core::Dnode, u64) -> core::result::Result<zfs_core::Block, zfs_core::ZfsError>
+pub fn zfs_core::read_zap_object(&[u8], &zfs_core::Dnode) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub fn zfs_core::uberblock_parse(&[u8]) -> core::option::Option<zfs_core::Uberblock>
+pub fn zfs_core::zap_list(&[u8]) -> alloc::vec::Vec<(alloc::string::String, u64)>
+pub fn zfs_core::zap_list_arrays(&[u8]) -> alloc::vec::Vec<(alloc::string::String, alloc::vec::Vec<u8>)>
+pub fn zfs_core::zap_lookup(&[u8], &str) -> core::option::Option<u64>
+pub fn zfs_core::zpl_attrs(&[u8], &zfs_core::ObjsetPhys, &zfs_core::SaRegistry, &zfs_core::SaLayouts, u64) -> core::option::Option<zfs_core::ZplAttrs>
+pub fn zfs_core::zpl_list_dir(&[u8], &zfs_core::ObjsetPhys, u64) -> alloc::vec::Vec<(alloc::string::String, u64)>
+pub fn zfs_core::zpl_lookup(&[u8], &zfs_core::ObjsetPhys, &str) -> core::option::Option<(u64, zfs_core::ZplAttrs)>
+pub fn zfs_core::zpl_master_root(&[u8], &zfs_core::ObjsetPhys) -> core::option::Option<u64>
+pub fn zfs_core::zpl_objset(&[u8], &zfs_core::ObjsetPhys) -> core::option::Option<zfs_core::ObjsetPhys>
+pub fn zfs_core::zpl_read_file(&[u8], &zfs_core::ObjsetPhys, u64) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub fn zfs_core::zpl_read_file_with(&[u8], &zfs_core::ObjsetPhys, u64, core::option::Option<u64>) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub fn zfs_core::zpl_read_path(&[u8], &zfs_core::ObjsetPhys, &str) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub fn zfs_core::zpl_root_dir(&[u8], &zfs_core::ObjsetPhys) -> core::option::Option<zfs_core::Dnode>
+pub fn zfs_core::zpl_sa_context(&[u8], &zfs_core::ObjsetPhys) -> core::option::Option<(zfs_core::SaRegistry, zfs_core::SaLayouts)>
