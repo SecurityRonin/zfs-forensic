@@ -1246,6 +1246,38 @@ mod tests {
     }
 
     #[test]
+    fn active_uberblock_across_labels_keeps_the_highest_txg_label() {
+        // Labels are scanned in offset order, so a later label carrying an OLDER
+        // uberblock must not displace the running best — and a later label
+        // carrying a newer one must.
+        let hi = uberblock_slot(BOOT_SKEW, 42);
+        let lo = uberblock_slot(BOOT_SKEW, 7);
+        let l1_ring = crate::label::LABEL_SIZE + UBERBLOCK_RING_OFFSET;
+
+        let mut older_last = vec![0u8; IMAGE_LEN];
+        older_last[UBERBLOCK_RING_OFFSET..UBERBLOCK_RING_OFFSET + hi.len()].copy_from_slice(&hi);
+        older_last[l1_ring..l1_ring + lo.len()].copy_from_slice(&lo);
+        assert_eq!(
+            active_uberblock_across_labels(&older_last)
+                .expect("an active uberblock")
+                .txg,
+            42,
+            "label 1's older txg must not displace label 0's"
+        );
+
+        let mut newer_last = vec![0u8; IMAGE_LEN];
+        newer_last[UBERBLOCK_RING_OFFSET..UBERBLOCK_RING_OFFSET + lo.len()].copy_from_slice(&lo);
+        newer_last[l1_ring..l1_ring + hi.len()].copy_from_slice(&hi);
+        assert_eq!(
+            active_uberblock_across_labels(&newer_last)
+                .expect("an active uberblock")
+                .txg,
+            42,
+            "label 1's newer txg must win"
+        );
+    }
+
+    #[test]
     fn active_uberblock_across_labels_declines_a_tiny_image() {
         // Smaller than one label: no ring to scan, and no panic.
         assert!(active_uberblock_across_labels(&[0u8; 16]).is_none());
@@ -1689,6 +1721,63 @@ mod tests {
             .collect();
         assert_eq!(runs.len(), 1);
         assert!(runs[0].run.flags.compressed, "lzjb blocks are compressed");
+    }
+
+    #[test]
+    fn l0_blkptrs_skips_an_unreadable_indirect_block() {
+        // A two-level object whose only top pointer names bytes past the end of
+        // the image: the descent drops that subtree rather than fabricating a run
+        // (and rather than propagating — extents of a partly-unreadable object
+        // still report the runs it can prove).
+        let fs = mounted();
+        let mut raw = [0u8; DNODE_SZ];
+        raw[2] = 2; // dn_nlevels: one indirect level above the data blocks
+        raw[3] = 1; // dn_nblkptr
+        raw[8..10].copy_from_slice(&((BLOCK as u16) >> 9).to_le_bytes());
+        write_blkptr(&mut raw, 64, BOOT_SKEW + (IMAGE_LEN as u64) * 4, BLOCK);
+        let dnode = Dnode::parse(&raw, crate::bytes::Endian::Little).expect("a 512-byte dnode");
+        assert!(!dnode.blkptrs[0].is_hole(), "the top pointer is not a hole");
+        assert!(fs.l0_blkptrs(&dnode).is_empty());
+    }
+
+    #[test]
+    fn l0_blkptrs_stops_at_the_max_runs_cap() {
+        // A hostile two-level object: 15 top pointers, each naming the SAME wide
+        // indirect block of 5000 non-hole children (15 x 5000 = 75_000 > the
+        // MAX_RUNS allocation-bomb cap). The descent must stop at the cap both
+        // mid-block and before descending a further top pointer.
+        const CHILDREN: usize = 5000;
+        const IND_BYTES: usize = CHILDREN * BLKPTR_SIZE; // 640_000 B == 1250 sectors
+        const TOP: usize = 15; // 15 * 128 + 64 == 1984 <= a 4-slot dnode's tail
+        let base = BOOT_SKEW as usize;
+        let ind_phys = (base + 64 * BLOCK) as u64; // past everything build_image writes
+
+        let mut img = build_image(DMU_OST_ZFS);
+        let mut ind = vec![0u8; IND_BYTES];
+        for i in 0..CHILDREN {
+            // Every child names a real, readable 4 KiB block, so none is a hole.
+            write_blkptr(&mut ind, i * BLKPTR_SIZE, BOOT_SKEW, BLOCK);
+        }
+        img[ind_phys as usize..ind_phys as usize + IND_BYTES].copy_from_slice(&ind);
+        let fs = ZfsFs::open(&src(img)).expect("the crafted pool still mounts");
+
+        // dn_extra_slots = 3 → a 4-slot (2048-byte) dnode, whose tail holds 15
+        // block pointers.
+        let mut raw = vec![0u8; 4 * DNODE_SZ];
+        raw[2] = 2; // dn_nlevels
+        raw[3] = TOP as u8; // dn_nblkptr
+        raw[8..10].copy_from_slice(&((BLOCK as u16) >> 9).to_le_bytes());
+        raw[12] = 3; // dn_extra_slots
+        for i in 0..TOP {
+            write_blkptr(&mut raw, 64 + i * BLKPTR_SIZE, ind_phys, IND_BYTES);
+        }
+        let dnode = Dnode::parse(&raw, crate::bytes::Endian::Little).expect("a 4-slot dnode");
+        assert_eq!(
+            dnode.blkptrs.len(),
+            TOP,
+            "all 15 top pointers fit the dnode"
+        );
+        assert_eq!(fs.l0_blkptrs(&dnode).len(), MAX_RUNS);
     }
 
     #[test]
