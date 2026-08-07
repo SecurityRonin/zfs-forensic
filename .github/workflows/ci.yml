@@ -18,4 +18,4 @@ jobs:
   # and MSRV is read from rust-version. Anything that needed configuring would be
   # a behaviour change smuggled in by an adoption PR, so there is nothing here.
   ci:
-    uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@a62ab10603151071744cec0b4e3638aa6406d4e4
+    uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@f9802dca64a95eb881fd05dd3f4f16e53b97f2b3
