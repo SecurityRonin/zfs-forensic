@@ -49,10 +49,10 @@ pub struct Block {
 
 /// Read the block a `bp` points at from the raw vdev `image`.
 ///
-/// Translates DVA[0]→physical (`(offset << 9) + 0x400000`), reads PSIZE bytes,
+/// Translates `DVA[0]`→physical (`(offset << 9) + 0x400000`), reads PSIZE bytes,
 /// decompresses to LSIZE, and verifies the checksum over the on-disk (PSIZE)
-/// bytes. On any per-DVA failure it falls back to the ditto copies DVA[1] then
-/// DVA[2]. Embedded blkptrs return their inline payload directly.
+/// bytes. On any per-DVA failure it falls back to the ditto copies `DVA[1]` then
+/// `DVA[2]`. Embedded blkptrs return their inline payload directly.
 ///
 /// # Errors
 ///

@@ -38,9 +38,6 @@ mod uberblock;
 mod zap;
 mod zpl;
 
-/// The `forensic-vfs` adapter: `impl FileSystem for ZfsFs` plus the label-nvlist
-/// prober, so a ZFS pool mounts through the format-agnostic VFS abstraction
-/// (ADR-0011) instead of a consumer naming this crate.
 #[cfg(feature = "vfs")]
 pub mod vfs;
 
@@ -78,11 +75,11 @@ pub use zpl::{
 };
 
 /// Parse a packed XDR nvlist config from a buffer beginning with the 4-byte
-/// packed header. Convenience re-export of [`nvlist::parse`].
+/// packed header. Convenience re-export of the crate-private `nvlist::parse`.
 ///
 /// # Errors
 ///
-/// See [`nvlist::parse`].
+/// See `nvlist::parse` (crate-private).
 pub fn nvlist_parse(data: &[u8]) -> Result<NvList, ZfsError> {
     nvlist::parse(data)
 }

@@ -82,7 +82,7 @@ impl VdevLabel {
     /// # Errors
     ///
     /// - [`ZfsError::Truncated`] if the buffer is smaller than one label.
-    /// - Propagates [`nvlist::parse`] errors (bad encoding / allocation bomb).
+    /// - Propagates [`crate::nvlist_parse`] errors (bad encoding / allocation bomb).
     /// - [`ZfsError::NoUberblock`] if no ring slot holds a valid uberblock.
     pub fn parse(label: &[u8]) -> Result<Self, ZfsError> {
         if label.len() < LABEL_SIZE {
