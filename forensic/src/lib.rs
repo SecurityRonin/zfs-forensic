@@ -72,7 +72,7 @@ pub enum AnomalyKind {
     /// A reachable metadata block (from the active uberblock's MOS/objset tree)
     /// whose blkptr checksum does not verify — a dead / corrupt / tampered block.
     BlkptrChecksumMismatch {
-        /// The block's DVA[0] physical byte offset in the image.
+        /// The block's `DVA[0]` physical byte offset in the image.
         dva_offset: u64,
         /// The DMU object type carried by the block pointer.
         object_type: u8,

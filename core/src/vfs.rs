@@ -55,7 +55,7 @@
 //!   run (it has no physical location — emitting offset 0 would name the vdev
 //!   label as a file's data). An *embedded* blkptr carries its payload inline in
 //!   the pointer, so it likewise has no byte run. Gang blocks and ditto copies
-//!   past DVA[0] are not expanded.
+//!   past `DVA[0]` are not expanded.
 //! - **`read_link` reconstructs a "slow" symlink** whose target lives in the
 //!   object's data block. A ZFS "fast" symlink stores its target in the SA bonus
 //!   under `ZPL_SYMLINK`, which [`crate::ZplAttrs`] does not decode, so such a
@@ -135,7 +135,7 @@ fn pool_config(image: &[u8]) -> Option<NvList> {
 
 /// Probe a sniff window for a ZFS pool by parsing the L0 vdev label's XDR nvlist
 /// config at [`NVLIST_OFFSET`] and requiring the pool-identity keys
-/// ([`is_pool_config`]).
+/// (`is_pool_config`, crate-private).
 ///
 /// A definite [`Confidence::Yes`] on a hit, [`Confidence::No`] otherwise —
 /// panic-free (a short window, a non-XDR buffer, or a config missing any
