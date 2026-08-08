@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/SecurityRonin/zfs-forensic/compare/zfs-forensic-core-v0.1.1...zfs-forensic-core-v0.1.2) - 2026-08-08
+
+### Documentation
+
+- fix the sixteen rustdoc link errors that fail `ci / Docs`
+
 ## [0.1.1](https://github.com/SecurityRonin/zfs-forensic/compare/zfs-forensic-core-v0.1.0...zfs-forensic-core-v0.1.1) - 2026-07-30
 
 ### Added
