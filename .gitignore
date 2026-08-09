@@ -1,4 +1,4 @@
-/target
+target/
 
 # Large ZFS oracle images are gitignored — only the small always-on L0 vdev label
 # fixture (tests/data/zfs_label0.bin, 256 KiB) and the oracle TEXT ground truth
