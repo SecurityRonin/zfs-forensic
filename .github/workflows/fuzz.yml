@@ -43,6 +43,7 @@ jobs:
           components: rust-src
       - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
         with:
+          cache-on-failure: true
           workspaces: fuzz
       - run: cargo install cargo-fuzz
       - run: cargo +nightly fuzz build
@@ -67,6 +68,7 @@ jobs:
           components: rust-src
       - uses: Swatinem/rust-cache@9bdad043e88c75890e36ad3bbc8d27f0090dd609 # v2.7.8
         with:
+          cache-on-failure: true
           workspaces: fuzz
       - run: cargo install cargo-fuzz
       - name: Seed corpus from committed fixtures
