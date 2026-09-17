@@ -29,8 +29,15 @@ const NV_ENCODE_XDR: u8 = 1;
 const DATA_TYPE_UINT64: i32 = 8;
 /// `DATA_TYPE_STRING`.
 const DATA_TYPE_STRING: i32 = 9;
+/// `DATA_TYPE_BYTE_ARRAY` — an opaque byte run, `nelem` bytes long.
+///
+/// This is how ZFS stores an extended attribute's VALUE in the `ZPL_DXATTR`
+/// nvlist, so it is not an optional nicety for that path.
+const DATA_TYPE_BYTE_ARRAY: i32 = 10;
 /// `DATA_TYPE_NVLIST` (a nested nvlist).
 const DATA_TYPE_NVLIST: i32 = 19;
+/// `DATA_TYPE_UINT8_ARRAY` — the same payload shape as a byte array.
+const DATA_TYPE_UINT8_ARRAY: i32 = 26;
 
 /// Upper bound on an nvpair name length (bytes) — allocation-bomb guard.
 const MAX_NAME_LEN: u64 = 4096;
@@ -50,6 +57,8 @@ pub enum NvValue {
     Str(String),
     /// `DATA_TYPE_NVLIST` (nested).
     NvList(NvList),
+    /// `DATA_TYPE_BYTE_ARRAY` / `DATA_TYPE_UINT8_ARRAY` — opaque bytes.
+    Bytes(Vec<u8>),
 }
 
 /// A decoded nvlist: an ordered set of `(name, value)` pairs.
@@ -79,6 +88,15 @@ impl NvList {
     pub fn get_str(&self, name: &str) -> Option<&str> {
         match self.get(name) {
             Some(NvValue::Str(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The byte-array value stored under `name`, if the pair is one.
+    #[must_use]
+    pub fn get_bytes(&self, name: &str) -> Option<&[u8]> {
+        match self.get(name)? {
+            NvValue::Bytes(b) => Some(b),
             _ => None,
         }
     }
@@ -210,6 +228,27 @@ fn parse_body(data: &[u8], off: usize, depth: usize) -> Result<(NvList, usize), 
             DATA_TYPE_NVLIST => {
                 let (nested, _) = parse_body(data, value_off, depth + 1)?;
                 NvValue::NvList(nested)
+            }
+            DATA_TYPE_BYTE_ARRAY | DATA_TYPE_UINT8_ARRAY => {
+                // ZFS encodes a byte array with xdr_opaque: the bytes are
+                // CONTIGUOUS, padded to the next 4-byte boundary. (An earlier
+                // attempt assumed XDR's one-4-byte-word-per-element rule, which
+                // returns the right LENGTH built from every fourth byte -- a
+                // plausible-looking wrong value. Settled by dumping the packed
+                // DXATTR of the reference pool:
+                //   00 00 00 0a  00 00 00 0a  74 69 6e 79 2d 76 61 6c 75 65
+                //   type=10      nelem=10     "tiny-value"                  )
+                let n = be_u32(data, after_name.saturating_add(4)) as usize;
+                if n as u64 > MAX_STRING_LEN {
+                    return Err(ZfsError::NvlistBomb {
+                        field: "byte_array nelem",
+                        value: n as u64,
+                        cap: MAX_STRING_LEN,
+                    });
+                }
+                let end = value_off.saturating_add(n);
+                let bytes = data.get(value_off..end).unwrap_or(&[]);
+                NvValue::Bytes(bytes.to_vec())
             }
             // Types P0 does not consume (arrays, bool, nvlist arrays, …) are
             // skipped by encoded_size rather than failing — the config carries

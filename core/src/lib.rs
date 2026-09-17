@@ -35,8 +35,10 @@ mod objset;
 mod read;
 mod sa;
 mod uberblock;
+pub mod xattr;
 mod zap;
 mod zpl;
+pub use xattr::{has_unread_spill_xattrs, list_xattrs, Xattr};
 
 #[cfg(feature = "vfs")]
 pub mod vfs;
@@ -59,8 +61,8 @@ pub use read::{
     mos_dnode, read_block, read_dnode_data, Block, MAX_BLOCK_SIZE, MAX_INDIRECT_LEVELS,
 };
 pub use sa::{
-    decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, SaAttrDesc, SaLayouts,
-    SaRegistry, ZplAttrs, SA_MAGIC, SA_TIME_SIZE, ZNODE_PHYS_SIZE,
+    decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, sa_attr_bytes,
+    SaAttrDesc, SaLayouts, SaRegistry, ZplAttrs, SA_MAGIC, SA_TIME_SIZE, ZNODE_PHYS_SIZE,
 };
 pub use uberblock::{BlkptrSummary, Uberblock, UBERBLOCK_MAGIC, UBERBLOCK_MIN_SHIFT, UB_MMP_MAGIC};
 pub use zap::{

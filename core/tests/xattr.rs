@@ -9,7 +9,7 @@
 //! | `sa` | a packed **nvlist** in the `ZPL_DXATTR` System Attribute |
 //! | `dir` | a hidden **ZAP directory**, each attribute a separate file object |
 //!
-//! Both fixtures were minted in a FreeBSD 15.0 VM and the mode is confirmed by
+//! Both fixtures were minted in a `FreeBSD` 15.0 VM and the mode is confirmed by
 //! the filesystem itself (`zfs get xattr` → `sa` / `dir`), not assumed from the
 //! generator command.
 //!
@@ -80,7 +80,11 @@ fn sa_mode_attributes_are_decoded_from_the_dxattr_nvlist() {
     let attrs = list_xattrs(&img, &zpl, FILE_OBJ);
 
     // Non-zero baseline: zdb reported "2 entries".
-    assert_eq!(attrs.len(), 2, "zdb: SA xattrs 108 bytes, 2 entries: {attrs:?}");
+    assert_eq!(
+        attrs.len(),
+        2,
+        "zdb: SA xattrs 108 bytes, 2 entries: {attrs:?}"
+    );
     let get = |n: &str| -> Vec<u8> {
         attrs
             .iter()

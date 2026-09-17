@@ -289,6 +289,60 @@ pub fn decode_sa_bonus(
     Some(attrs)
 }
 
+/// Locate one System Attribute's bytes within an SA buffer, by registry name.
+///
+/// This is the walk [`decode_sa_bonus`] deliberately stops short of. That
+/// function needs only fixed-length metadata (mode, size, the timestamps) and
+/// halts at the first variable-length attribute rather than mis-skipping it.
+/// Reaching a variable-length attribute means consuming the header's
+/// `sa_lengths[]` array — a `u16` per variable-length attribute, in layout
+/// order, starting at offset 6.
+///
+/// Returns `None` when the buffer is not an SA buffer, the layout is unknown,
+/// the attribute is not in this object's layout, or the declared extent does
+/// not fit. A short buffer yields `None` rather than a truncated value: a
+/// partial attribute reported as whole is worse than a reported absence.
+#[must_use]
+pub fn sa_attr_bytes<'a>(
+    sa: &'a [u8],
+    registry: &SaRegistry,
+    layouts: &SaLayouts,
+    name: &str,
+) -> Option<&'a [u8]> {
+    if le_u32(sa, 0) != SA_MAGIC {
+        return None;
+    }
+    let info = le_u16(sa, 4);
+    let layout_num = u64::from(info & 0x3FF);
+    let hdrsz = usize::from((info >> 10) & 0x3F) << 3;
+    let ids = layouts.attr_ids(layout_num)?;
+    let want = registry.by_name(name)?.id;
+
+    // sa_lengths[] sits between the 6-byte fixed header and hdrsz.
+    let mut var_idx = 0usize;
+    let mut off = hdrsz;
+    for &id in ids {
+        // A registry that does not know this id leaves the remaining offsets
+        // unknowable, so the walk stops rather than guessing a footprint.
+        let registered = registry.size_of(id)?;
+        let size = if registered == 0 {
+            let at = 6 + var_idx * 2;
+            if at + 2 > hdrsz.min(sa.len()) {
+                return None;
+            }
+            var_idx += 1;
+            usize::from(le_u16(sa, at))
+        } else {
+            usize::from(registered)
+        };
+        if id == want {
+            return sa.get(off..off.checked_add(size)?);
+        }
+        off = off.checked_add(size)?;
+    }
+    None
+}
+
 /// Resolved numeric ids of the well-known ZPL attributes for one registry.
 struct KnownAttrs {
     mode: Option<u16>,

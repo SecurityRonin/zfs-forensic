@@ -620,14 +620,65 @@ impl FileSystem for ZfsFs {
         })
     }
 
+    /// The object's contents, plus one entry per extended attribute.
+    ///
+    /// Both ZFS storage modes are reported the same way: an `xattr=sa` pool
+    /// keeps the value in the dnode's own System Attributes and an `xattr=dir`
+    /// pool keeps it in a separate file object, but the attribute is the same
+    /// artifact either way and the mode is a dataset property, not evidence
+    /// about the file. Residency follows where the bytes actually are.
+    fn data_streams(&self, ino: FileId) -> VfsResult<Vec<StreamInfo>> {
+        let obj = object_of(ino)?;
+        let size = self.attrs(obj).map(|a| a.size).unwrap_or(0);
+        let mut out = vec![StreamInfo {
+            id: StreamId::Default,
+            name: None,
+            size,
+            residency: ResidencyKind::NonResident,
+            kind: StreamKind::Data,
+        }];
+        for (i, x) in crate::list_xattrs(&self.image, &self.zpl, obj)
+            .into_iter()
+            .enumerate()
+        {
+            out.push(StreamInfo {
+                id: StreamId::Xattr(u16::try_from(i).unwrap_or(u16::MAX)),
+                name: Some(x.name.into_bytes()),
+                size: x.value.len() as u64,
+                residency: ResidencyKind::Resident {
+                    inline_len: u32::try_from(x.value.len()).unwrap_or(u32::MAX),
+                },
+                kind: StreamKind::Xattr,
+            });
+        }
+        Ok(out)
+    }
+
     fn read_at(&self, ino: FileId, stream: StreamId, off: u64, buf: &mut [u8]) -> VfsResult<usize> {
+        let obj = object_of(ino)?;
+        // Attributes are dispatched BEFORE the single-stream refusal: that guard
+        // exists to reject stream kinds ZFS does not have, and extended
+        // attributes are a kind it does.
+        if let StreamId::Xattr(idx) = stream {
+            let all = crate::list_xattrs(&self.image, &self.zpl, obj);
+            let x = all.get(idx as usize).ok_or_else(|| VfsError::Unsupported {
+                layer: "zfs xattr index",
+                scheme: format!("attribute {idx} of {}", all.len()),
+            })?;
+            let start = usize::try_from(off).unwrap_or(usize::MAX);
+            let Some(tail) = x.value.get(start..) else {
+                return Ok(0);
+            };
+            let n = tail.len().min(buf.len());
+            buf[..n].copy_from_slice(&tail[..n]);
+            return Ok(n);
+        }
         if stream != StreamId::Default {
             return Err(VfsError::Unsupported {
                 layer: "zfs stream",
                 scheme: format!("{stream:?} (ZFS objects carry a single data stream)"),
             });
         }
-        let obj = object_of(ino)?;
         let content = self.content(obj)?;
         let Ok(start) = usize::try_from(off) else {
             return Ok(0); // cov:unreachable: u64 -> usize always succeeds on a 64-bit target; kept so a 32-bit build reads short instead of panicking.
