@@ -602,15 +602,29 @@ e68db4521d8c341f11de6231fabd41ac8e35655934b7dced82db76465047c04b  /tpool/sub/bar
   `has_unread_spill_xattrs` instead, letting a caller tell "not recovered" from
   "none present".
 
-  **That pool is preserved** at
-  `~/src/forensic-corpora/zfs-spill-sample/zfs_spill_dxattr.img.gz` (484 KiB
-  gzipped, md5 `aab092f929ccbe7e4325f4eb572ba02a`) so this scope limit is
-  checkable and the spill path has a ready fixture when it is implemented. `zdb`
-  on its object 2 reports `dnode flags: … SPILL_BLKPTR` and
-  `SA xattrs: 3132 bytes, 3 entries`. It is not committed here because no test
-  reads it yet; its xattrs sit on CHILD datasets (`xattrpool/sa`, `xattrpool/dir`)
-  while `zpl_objset` reaches the ROOT dataset, which is why the committed
-  fixtures were re-minted with root-dataset attributes.
+  **That pool is committed** as `tests/data/zfs_spill_dxattr.img.gz` (483 `KiB`
+  gzipped, 256 `MiB` raw, md5 `aab092f929ccbe7e4325f4eb572ba02a`) so this scope
+  limit is checkable from a clean checkout and the spill path has its fixture
+  ready. `zdb -e -p . -dddd xattrpool/sa 2` reports:
+
+  ```text
+  dnode flags: USED_BYTES USERUSED_ACCOUNTED USEROBJUSED_ACCOUNTED SPILL_BLKPTR
+  SA xattrs: 3132 bytes, 3 entries
+      small = tiny-value
+      comment = a second attribute
+      big = BBBB… (3000 bytes)
+  ```
+
+  The 3000-byte value is what pushes `DXATTR` out of the 292-byte bonus buffer.
+  **No test reads it yet** — it is committed as evidence for the stated limit,
+  not as live coverage, and it is in the same size class as the two fixtures
+  above (325 and 334 `KiB`).
+
+  Minted in the same `FreeBSD` 15.0 VM, 2026-09-17, as the FIRST attempt at a ZFS
+  xattr fixture. Superseded for the committed pair because its xattrs sit on
+  CHILD datasets (`xattrpool/sa`, `xattrpool/dir`) while `zpl_objset` reaches the
+  ROOT dataset — which is why the working fixtures were re-minted with
+  root-dataset attributes.
 - **`file.txt` is object 2 in both pools**; `adir` is 128 (`sa`) and 384 (`dir`).
 - **Redistribution:** none — self-minted.
 - **Committed gzipped** (192 MiB → 325 KiB and 334 KiB).
