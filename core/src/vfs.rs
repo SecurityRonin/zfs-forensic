@@ -1656,10 +1656,15 @@ mod tests {
         assert_eq!(fs.deleted().expect("deleted").count(), 0);
         assert_eq!(fs.unallocated().expect("unallocated").count(), 0);
         assert_eq!(fs.deleted_nodes().expect("deleted_nodes").count(), 0);
-        assert!(fs
-            .data_streams(FileId::Opaque(3))
-            .expect("streams")
-            .is_empty());
+        // data_streams is no longer empty BY DESIGN: every node now reports its
+        // own contents as the default stream, plus one entry per extended
+        // attribute. The old assertion encoded "ZFS exposes no streams at all",
+        // which is what made attributes invisible. Object 3 carries none, so
+        // exactly the default stream is expected -- asserting 0 here would
+        // re-assert the defect this work removed.
+        let streams = fs.data_streams(FileId::Opaque(3)).expect("streams");
+        assert_eq!(streams.len(), 1, "the default data stream: {streams:?}");
+        assert_eq!(streams[0].id, forensic_vfs::StreamId::Default);
         assert!(fs
             .hardlinks(FileId::Opaque(3))
             .expect("hardlinks")
