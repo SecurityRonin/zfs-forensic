@@ -61,6 +61,7 @@ pub fn zfs_core::vfs::ZfsFs::open(&forensic_vfs::source::DynSource) -> forensic_
 impl core::fmt::Debug for zfs_core::vfs::ZfsFs
 pub fn zfs_core::vfs::ZfsFs::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl forensic_vfs::fs::FileSystem for zfs_core::vfs::ZfsFs
+pub fn zfs_core::vfs::ZfsFs::data_streams(&self, forensicnomicon_core::file_id::FileId) -> forensic_vfs::error::VfsResult<alloc::vec::Vec<forensic_vfs::fs::StreamInfo>>
 pub fn zfs_core::vfs::ZfsFs::deleted(&self) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::NodeStream>
 pub fn zfs_core::vfs::ZfsFs::extents(&self, forensicnomicon_core::file_id::FileId, forensic_vfs::fs::StreamId) -> forensic_vfs::error::VfsResult<forensic_vfs::fs::ExtentStream>
 pub fn zfs_core::vfs::ZfsFs::kind(&self) -> forensicnomicon_core::filesystems::FsKind
@@ -76,6 +77,12 @@ pub fn zfs_core::vfs::ZfsFs::unallocated(&self) -> forensic_vfs::error::VfsResul
 pub fn zfs_core::vfs::ZfsFs::volume_label(&self) -> core::option::Option<alloc::string::String>
 pub fn zfs_core::vfs::open(&forensic_vfs::source::DynSource) -> forensic_vfs::error::VfsResult<alloc::sync::Arc<dyn forensic_vfs::fs::FileSystem>>
 pub fn zfs_core::vfs::zfs_probe(&forensic_vfs::registry::SniffWindow<'_>) -> forensic_vfs::registry::Confidence
+pub mod zfs_core::xattr
+pub struct zfs_core::xattr::Xattr
+pub zfs_core::xattr::Xattr::name: alloc::string::String
+pub zfs_core::xattr::Xattr::value: alloc::vec::Vec<u8>
+pub fn zfs_core::xattr::has_unread_spill_xattrs(&[u8], &zfs_core::ObjsetPhys, u64) -> bool
+pub fn zfs_core::xattr::list_xattrs(&[u8], &zfs_core::ObjsetPhys, u64) -> alloc::vec::Vec<zfs_core::xattr::Xattr>
 #[non_exhaustive] pub enum zfs_core::ChecksumType
 pub zfs_core::ChecksumType::Fletcher2
 pub zfs_core::ChecksumType::Fletcher4
@@ -129,6 +136,7 @@ pub enum zfs_core::Endian
 pub zfs_core::Endian::Big
 pub zfs_core::Endian::Little
 pub enum zfs_core::NvValue
+pub zfs_core::NvValue::Bytes(alloc::vec::Vec<u8>)
 pub zfs_core::NvValue::NvList(zfs_core::NvList)
 pub zfs_core::NvValue::Str(alloc::string::String)
 pub zfs_core::NvValue::U64(u64)
@@ -232,6 +240,7 @@ pub fn zfs_core::Dva::physical_byte_offset(self) -> u64
 pub struct zfs_core::NvList
 impl zfs_core::NvList
 pub fn zfs_core::NvList::get(&self, &str) -> core::option::Option<&zfs_core::NvValue>
+pub fn zfs_core::NvList::get_bytes(&self, &str) -> core::option::Option<&[u8]>
 pub fn zfs_core::NvList::get_nvlist(&self, &str) -> core::option::Option<&zfs_core::NvList>
 pub fn zfs_core::NvList::get_str(&self, &str) -> core::option::Option<&str>
 pub fn zfs_core::NvList::get_u64(&self, &str) -> core::option::Option<u64>
@@ -291,6 +300,9 @@ pub zfs_core::VdevTree::guid: u64
 pub zfs_core::VdevTree::vdev_type: alloc::string::String
 impl zfs_core::VdevTree
 pub fn zfs_core::VdevTree::from_nvlist(&zfs_core::NvList) -> Self
+pub struct zfs_core::Xattr
+pub zfs_core::Xattr::name: alloc::string::String
+pub zfs_core::Xattr::value: alloc::vec::Vec<u8>
 pub struct zfs_core::ZplAttrs
 pub zfs_core::ZplAttrs::atime: (u64, u64)
 pub zfs_core::ZplAttrs::crtime: (u64, u64)
@@ -347,7 +359,9 @@ pub fn zfs_core::detect_blkptr_endian(&[u8]) -> zfs_core::bytes::Endian
 pub fn zfs_core::dsl_dataset_bp(&zfs_core::Dnode) -> zfs_core::Blkptr
 pub fn zfs_core::dsl_dataset_prev_snap(&zfs_core::Dnode) -> u64
 pub fn zfs_core::dsl_dir_head_dataset(&zfs_core::Dnode) -> u64
+pub fn zfs_core::has_unread_spill_xattrs(&[u8], &zfs_core::ObjsetPhys, u64) -> bool
 pub fn zfs_core::label_offsets(u64) -> ([u64; 2], core::option::Option<[u64; 2]>)
+pub fn zfs_core::list_xattrs(&[u8], &zfs_core::ObjsetPhys, u64) -> alloc::vec::Vec<zfs_core::xattr::Xattr>
 pub fn zfs_core::mos_dnode(&[u8], &zfs_core::ObjsetPhys, u64) -> core::option::Option<zfs_core::Dnode>
 pub fn zfs_core::nvlist_parse(&[u8]) -> core::result::Result<zfs_core::NvList, zfs_core::ZfsError>
 pub fn zfs_core::parse_sa_layouts(&[u8]) -> zfs_core::SaLayouts
@@ -355,6 +369,7 @@ pub fn zfs_core::parse_sa_registry(&[u8]) -> zfs_core::SaRegistry
 pub fn zfs_core::read_block(&[u8], &zfs_core::Blkptr) -> core::result::Result<zfs_core::Block, zfs_core::ZfsError>
 pub fn zfs_core::read_dnode_data(&[u8], &zfs_core::Dnode, u64) -> core::result::Result<zfs_core::Block, zfs_core::ZfsError>
 pub fn zfs_core::read_zap_object(&[u8], &zfs_core::Dnode) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub fn zfs_core::sa_attr_bytes<'a>(&'a [u8], &zfs_core::SaRegistry, &zfs_core::SaLayouts, &str) -> core::option::Option<&'a [u8]>
 pub fn zfs_core::uberblock_parse(&[u8]) -> core::option::Option<zfs_core::Uberblock>
 pub fn zfs_core::zap_list(&[u8]) -> alloc::vec::Vec<(alloc::string::String, u64)>
 pub fn zfs_core::zap_list_arrays(&[u8]) -> alloc::vec::Vec<(alloc::string::String, alloc::vec::Vec<u8>)>
