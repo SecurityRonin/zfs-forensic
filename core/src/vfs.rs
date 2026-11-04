@@ -1879,4 +1879,72 @@ mod tests {
         assert_eq!(got.len(), 16);
         assert!(got.iter().all(|&b| b == 0xAB));
     }
+
+    // ── extended attributes through the VFS adapter (real `xattr=sa` pool) ──
+
+    /// The committed `xattr=sa` pool (provenance: tests/data/README.md), where
+    /// `file.txt` is object 2 and carries `small` and `comment`.
+    fn xattr_pool() -> ZfsFs {
+        use std::io::Read as _;
+        let gz: &[u8] = include_bytes!("../../tests/data/zfs_sa.img.gz");
+        let mut img = Vec::new();
+        flate2::read::GzDecoder::new(gz)
+            .read_to_end(&mut img)
+            .expect("fixture decompresses");
+        ZfsFs::open(&src(img)).expect("the xattr=sa pool mounts")
+    }
+
+    #[test]
+    fn data_streams_lists_each_extended_attribute() {
+        let fs = xattr_pool();
+        let streams = fs.data_streams(FileId::Opaque(2)).expect("streams");
+        assert_eq!(streams.len(), 3, "default + 2 attributes: {streams:?}");
+        assert_eq!(streams[0].id, StreamId::Default);
+        let mut names: Vec<Vec<u8>> = streams[1..]
+            .iter()
+            .map(|s| {
+                assert_eq!(s.kind, StreamKind::Xattr);
+                s.name.clone().expect("attribute streams are named")
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, vec![b"comment".to_vec(), b"small".to_vec()]);
+    }
+
+    #[test]
+    fn read_at_returns_an_attribute_value_and_bounds_the_offset() {
+        let fs = xattr_pool();
+        let streams = fs.data_streams(FileId::Opaque(2)).expect("streams");
+        let small = streams
+            .iter()
+            .find(|s| s.name.as_deref() == Some(&b"small"[..]))
+            .expect("small is listed");
+        let mut buf = [0u8; 64];
+        let n = fs
+            .read_at(FileId::Opaque(2), small.id, 0, &mut buf)
+            .expect("read small");
+        assert_eq!(&buf[..n], b"tiny-value");
+        let n = fs
+            .read_at(FileId::Opaque(2), small.id, 5, &mut buf)
+            .expect("read small from 5");
+        assert_eq!(&buf[..n], b"value");
+        assert_eq!(
+            fs.read_at(FileId::Opaque(2), small.id, 1_000, &mut buf)
+                .expect("past the end"),
+            0
+        );
+    }
+
+    #[test]
+    fn read_at_refuses_an_attribute_index_that_does_not_exist() {
+        let fs = xattr_pool();
+        let mut buf = [0u8; 8];
+        assert!(matches!(
+            fs.read_at(FileId::Opaque(2), StreamId::Xattr(99), 0, &mut buf),
+            Err(VfsError::Unsupported {
+                layer: "zfs xattr index",
+                ..
+            })
+        ));
+    }
 }

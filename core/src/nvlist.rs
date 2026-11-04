@@ -317,7 +317,7 @@ fn read_xdr_string(
 
 #[cfg(test)]
 mod unit {
-    use super::{parse, NvList, NvValue, VdevTree};
+    use super::{parse, NvList, NvValue, VdevTree, DATA_TYPE_BYTE_ARRAY, MAX_STRING_LEN};
     use crate::error::ZfsError;
 
     /// A minimal packed XDR nvlist: header + version/nvflag + one uint64 pair
@@ -545,6 +545,52 @@ mod unit {
             parse(&buf),
             Err(ZfsError::NvlistBomb {
                 field: "pair_count",
+                ..
+            })
+        ));
+    }
+
+    /// A packed nvlist holding one byte-array pair, with `nelem` written as
+    /// given (so a test can lie about it) and `value` stored xdr_opaque-style.
+    fn one_bytes(name: &str, nelem: u32, value: &[u8]) -> Vec<u8> {
+        let mut b = vec![0x01, 0x01, 0x00, 0x00];
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&1u32.to_be_bytes());
+        let name_bytes = name.as_bytes();
+        let padded = (name_bytes.len() + 3) & !3;
+        let mut pair = Vec::new();
+        pair.extend_from_slice(&(name_bytes.len() as i32).to_be_bytes());
+        pair.extend_from_slice(name_bytes);
+        pair.resize(4 + padded, 0);
+        pair.extend_from_slice(&DATA_TYPE_BYTE_ARRAY.to_be_bytes());
+        pair.extend_from_slice(&nelem.to_be_bytes());
+        pair.extend_from_slice(value);
+        pair.resize((pair.len() + 3) & !3, 0);
+        let encoded = 8 + pair.len();
+        b.extend_from_slice(&(encoded as i32).to_be_bytes());
+        b.extend_from_slice(&(encoded as i32).to_be_bytes());
+        b.extend_from_slice(&pair);
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b
+    }
+
+    #[test]
+    fn get_bytes_returns_byte_arrays_only() {
+        let nv = parse(&one_bytes("small", 10, b"tiny-value")).unwrap();
+        assert_eq!(nv.get_bytes("small"), Some(&b"tiny-value"[..]));
+        assert_eq!(nv.get_bytes("absent"), None);
+        let other = parse(&one_u64("answer", 42)).unwrap();
+        assert_eq!(other.get_bytes("answer"), None, "a u64 is not a byte array");
+    }
+
+    #[test]
+    fn oversized_byte_array_count_is_capped() {
+        let lie = u32::try_from(MAX_STRING_LEN + 1).unwrap();
+        assert!(matches!(
+            parse(&one_bytes("big", lie, b"x")),
+            Err(ZfsError::NvlistBomb {
+                field: "byte_array nelem",
                 ..
             })
         ));

@@ -108,6 +108,12 @@ fn sa_xattrs(image: &[u8], zpl: &ObjsetPhys, dnode: &Dnode) -> Vec<Xattr> {
     let Some(packed) = sa_attr_bytes(&dnode.bonus, &registry, &layouts, ZPL_DXATTR) else {
         return Vec::new();
     };
+    dxattr_pairs(packed)
+}
+
+/// Decode a packed `ZPL_DXATTR` nvlist into attributes. Pure, so the
+/// corrupt-input branches are testable without a pool.
+fn dxattr_pairs(packed: &[u8]) -> Vec<Xattr> {
     let Ok(nv) = nvlist::parse(packed) else {
         return Vec::new();
     };
@@ -131,19 +137,13 @@ fn dir_xattrs(image: &[u8], zpl: &ObjsetPhys, dnode: &Dnode) -> Vec<Xattr> {
     let Some((registry, layouts)) = zpl_sa_context(image, zpl) else {
         return Vec::new();
     };
-    let Some(raw) = sa_attr_bytes(&dnode.bonus, &registry, &layouts, ZPL_XATTR) else {
+    // No ZPL_XATTR attribute, a value too short to name an object, and the 0
+    // sentinel all mean the same thing: no attribute directory.
+    let Some(dir_obj) =
+        sa_attr_bytes(&dnode.bonus, &registry, &layouts, ZPL_XATTR).and_then(xattr_dir_object)
+    else {
         return Vec::new();
     };
-    if raw.len() < 8 {
-        return Vec::new();
-    }
-    let dir_obj = u64::from_le_bytes([
-        raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
-    ]);
-    // 0 is the "no attribute directory" sentinel, not object 0.
-    if dir_obj == 0 {
-        return Vec::new();
-    }
     zpl_list_dir(image, zpl, dir_obj)
         .into_iter()
         .filter_map(|(name, obj)| {
@@ -154,4 +154,69 @@ fn dir_xattrs(image: &[u8], zpl: &ObjsetPhys, dnode: &Dnode) -> Vec<Xattr> {
             Some(Xattr { name, value })
         })
         .collect()
+}
+
+/// The attribute-directory object named by a `ZPL_XATTR` value, or `None` when
+/// the value is too short to hold one or is the 0 "no directory" sentinel.
+fn xattr_dir_object(raw: &[u8]) -> Option<u64> {
+    let bytes: [u8; 8] = raw.get(..8)?.try_into().ok()?;
+    // 0 is the "no attribute directory" sentinel, not object 0.
+    match u64::from_le_bytes(bytes) {
+        0 => None,
+        obj => Some(obj),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod unit {
+    use super::{dir_xattrs, dxattr_pairs, sa_xattrs, xattr_dir_object};
+    use crate::bytes::Endian;
+    use crate::dnode::{Dnode, DNODE_SIZE};
+    use crate::objset::{ObjsetPhys, OBJSET_MIN_SIZE};
+
+    #[test]
+    fn no_sa_context_yields_no_attributes_in_either_mode() {
+        // An image with no ZPL master node has no SA registry to decode with.
+        let zpl = ObjsetPhys::parse(&[0u8; OBJSET_MIN_SIZE], Endian::Little).unwrap();
+        let dnode = Dnode::parse(&[0u8; DNODE_SIZE], Endian::Little).unwrap();
+        assert!(sa_xattrs(&[], &zpl, &dnode).is_empty());
+        assert!(dir_xattrs(&[], &zpl, &dnode).is_empty());
+    }
+
+    #[test]
+    fn a_corrupt_dxattr_nvlist_yields_no_attributes() {
+        assert!(dxattr_pairs(&[0xFF, 0x00, 0x00, 0x00]).is_empty());
+    }
+
+    #[test]
+    fn a_non_byte_array_pair_is_not_reported_as_an_attribute() {
+        // header, version, nvflag, one uint64 pair "n" = 7, terminator.
+        let mut b = vec![0x01, 0x01, 0x00, 0x00];
+        b.extend_from_slice(&0i32.to_be_bytes());
+        b.extend_from_slice(&1u32.to_be_bytes());
+        let mut pair = Vec::new();
+        pair.extend_from_slice(&1i32.to_be_bytes());
+        pair.extend_from_slice(b"n\0\0\0");
+        pair.extend_from_slice(&8i32.to_be_bytes()); // DATA_TYPE_UINT64
+        pair.extend_from_slice(&1i32.to_be_bytes());
+        pair.extend_from_slice(&7u64.to_be_bytes());
+        let encoded = i32::try_from(8 + pair.len()).unwrap();
+        b.extend_from_slice(&encoded.to_be_bytes());
+        b.extend_from_slice(&encoded.to_be_bytes());
+        b.extend_from_slice(&pair);
+        b.extend_from_slice(&[0u8; 8]);
+        assert!(
+            crate::nvlist::parse(&b).unwrap().get("n").is_some(),
+            "control: the pair parses"
+        );
+        assert!(dxattr_pairs(&b).is_empty());
+    }
+
+    #[test]
+    fn xattr_dir_object_rejects_short_and_sentinel_values() {
+        assert_eq!(xattr_dir_object(&[1, 0, 0]), None, "shorter than a u64");
+        assert_eq!(xattr_dir_object(&[0u8; 8]), None, "0 means no directory");
+        assert_eq!(xattr_dir_object(&384u64.to_le_bytes()), Some(384));
+    }
 }

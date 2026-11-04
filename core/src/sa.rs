@@ -430,8 +430,8 @@ pub fn decode_znode_phys(bonus: &[u8], endian: Endian) -> Option<ZplAttrs> {
 #[allow(clippy::unwrap_used)]
 mod unit {
     use super::{
-        decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, SaAttrDesc,
-        SaLayouts, SaRegistry, SA_MAGIC,
+        decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, sa_attr_bytes,
+        SaAttrDesc, SaLayouts, SaRegistry, SA_MAGIC,
     };
     use crate::bytes::Endian;
     use crate::zap::ZBT_MICRO;
@@ -624,5 +624,29 @@ mod unit {
         assert_eq!(a.size, 4096);
         assert_eq!(a.links, 2);
         assert!(decode_znode_phys(&[0u8; 100], Endian::Little).is_none());
+    }
+
+    #[test]
+    fn sa_attr_bytes_wrong_magic_is_none() {
+        let mut bonus = sa_bonus(1, &[0u8; 24]);
+        bonus[0] ^= 0xFF;
+        assert!(sa_attr_bytes(&bonus, &core_registry(), &tiny_layouts(), "ZPL_MODE").is_none());
+    }
+
+    #[test]
+    fn sa_attr_bytes_stops_when_a_variable_length_has_no_header_slot() {
+        // Two variable-length attributes but an 8-byte header: the 6-byte fixed
+        // part leaves room for ONE sa_lengths[] entry. The second attribute's
+        // length is unknowable, so the walk returns None rather than guessing.
+        let reg = parse_sa_registry(&registry_block(&[
+            ("ZPL_DACL_ACES", pack(19, 0, 4)),
+            ("ZPL_DXATTR", pack(20, 0, 4)),
+        ]));
+        let layouts = SaLayouts {
+            by_num: vec![(4, vec![19, 20])],
+        };
+        let mut bonus = sa_bonus(4, &[0xAB; 8]);
+        bonus[6..8].copy_from_slice(&4u16.to_le_bytes()); // first var attr: 4 bytes
+        assert!(sa_attr_bytes(&bonus, &reg, &layouts, "ZPL_DXATTR").is_none());
     }
 }

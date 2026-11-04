@@ -46,7 +46,7 @@
 
 use std::io::Read;
 
-use zfs_core::{list_xattrs, zpl_objset, Endian, ObjsetPhys, VdevLabel};
+use zfs_core::{has_unread_spill_xattrs, list_xattrs, zpl_objset, Endian, ObjsetPhys, VdevLabel};
 
 /// `file.txt` is object 2 in both pools; `adir` is 128 (`sa`) / 384 (`dir`).
 const FILE_OBJ: u64 = 2;
@@ -159,4 +159,26 @@ fn an_object_without_attributes_lists_nothing() {
         list_xattrs(&img, &zpl, root).is_empty(),
         "the ZPL root directory carries no extended attributes"
     );
+}
+
+/// An object id with no dnode yields an empty list, not an error or a panic.
+#[test]
+fn a_nonexistent_object_lists_nothing() {
+    let img = image("sa");
+    let zpl = zpl(&img);
+    assert!(list_xattrs(&img, &zpl, u64::MAX).is_empty());
+}
+
+/// `has_unread_spill_xattrs` is false when the attributes were read from the
+/// bonus buffer, and false for an object that does not exist.
+///
+/// The TRUE case is not exercised: the committed spill-block pool
+/// (`zfs_spill_dxattr.img.gz`) keeps its attributes on a CHILD dataset, which
+/// `zpl_objset` (root dataset only) does not reach -- see tests/data/README.md.
+#[test]
+fn spill_flag_check_is_false_when_attributes_were_read() {
+    let img = image("sa");
+    let zpl = zpl(&img);
+    assert!(!has_unread_spill_xattrs(&img, &zpl, FILE_OBJ));
+    assert!(!has_unread_spill_xattrs(&img, &zpl, u64::MAX));
 }
