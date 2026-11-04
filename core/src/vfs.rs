@@ -629,7 +629,7 @@ impl FileSystem for ZfsFs {
     /// about the file. Residency follows where the bytes actually are.
     fn data_streams(&self, ino: FileId) -> VfsResult<Vec<StreamInfo>> {
         let obj = object_of(ino)?;
-        let size = self.attrs(obj).map(|a| a.size).unwrap_or(0);
+        let size = self.attrs(obj).map_or(0, |a| a.size);
         let mut out = vec![StreamInfo {
             id: StreamId::Default,
             name: None,

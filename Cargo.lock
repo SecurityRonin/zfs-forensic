@@ -73,9 +73,7 @@ dependencies = [
 
 [[package]]
 name = "forensic-vfs"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0ddd42a9ee486369f4a16bec780a21faa546a07a31e9950522791c286c64fb7"
+version = "0.9.0"
 dependencies = [
  "forensicnomicon-core",
  "state-history-forensic",
@@ -159,9 +157,9 @@ dependencies = [
 
 [[package]]
 name = "ruzstd"
-version = "0.8.3"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
 dependencies = [
  "twox-hash",
 ]
@@ -266,7 +264,3 @@ dependencies = [
  "sha2",
  "thiserror",
 ]
-
-[[patch.unused]]
-name = "forensic-vfs"
-version = "0.9.0"

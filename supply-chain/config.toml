@@ -67,7 +67,7 @@ version = "1.0.46"
 criteria = "safe-to-deploy"
 
 [[exemptions.ruzstd]]
-version = "0.8.3"
+version = "0.9.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.sha2]]
