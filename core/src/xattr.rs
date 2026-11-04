@@ -23,8 +23,8 @@
 //! `sa_lengths[]` array, and hands over the packed nvlist.
 //!
 //! Attribute values inside that nvlist are `DATA_TYPE_BYTE_ARRAY`, whose XDR
-//! encoding gives each byte its own 4-byte big-endian word — see
-//! [`crate::nvlist`].
+//! encoding gives each byte its own 4-byte big-endian word; they decode to
+//! [`crate::NvValue::Bytes`].
 //!
 //! ## `dir` — the hidden attribute directory
 //!
