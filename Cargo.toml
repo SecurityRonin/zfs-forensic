@@ -8,7 +8,7 @@ members = ["core", "forensic"]
 #
 # `rust-version` is the CI-verified MSRV floor. It is NOT the usual fleet library
 # floor (1.75/1.80): the batteries-included pure-Rust zstd extent decoder
-# (`ruzstd 0.8`, no C FFI) declares rust-version 1.87, and `lz4_flex 0.11` claims
+# (`ruzstd 0.9.1`, no C FFI) declares rust-version 1.87, and `lz4_flex 0.11` claims
 # 1.81 — so the toolchain floor is dictated by `ruzstd`, not our own code. Per the
 # Batteries-Included policy ("MSRV yields to capability") we keep the
 # always-compiled zstd path and take the 1.87 floor rather than feature-gate the
