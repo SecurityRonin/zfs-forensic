@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/SecurityRonin/zfs-forensic/compare/zfs-forensic-core-v0.1.2...zfs-forensic-core-v0.2.0) - 2026-11-04
+
+### Added
+
+- *(xattr)* GREEN - decode ZFS extended attributes in both storage modes
+
+### Documentation
+
+- *(xattr)* link the public NvValue::Bytes, not the private nvlist module
+
+### Fixed
+
+- *(security)* bump ruzstd to 0.9.1 for RUSTSEC-2026-0344
+
+### Other
+
+- require forensic-vfs 0.9
+
 ## [0.1.2](https://github.com/SecurityRonin/zfs-forensic/compare/zfs-forensic-core-v0.1.1...zfs-forensic-core-v0.1.2) - 2026-08-08
 
 ### Documentation
