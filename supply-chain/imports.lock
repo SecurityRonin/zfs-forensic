@@ -1,6 +1,13 @@
 
 # cargo-vet imports lock
 
+[[publisher.forensic-vfs]]
+version = "0.10.0"
+when = "2026-11-04"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
 [[publisher.forensicnomicon]]
 version = "1.6.0"
 when = "2026-07-12"

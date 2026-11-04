@@ -41,7 +41,7 @@ ruzstd = "0.9.1"
 # The VFS contract the `vfs` adapter feature implements, so a ZFS pool mounts
 # through the format-agnostic abstraction (ADR-0011). Optional: the reader itself
 # stays a leaf, and forensic-vfs's MSRV (1.85) sits under this repo's 1.87 floor.
-forensic-vfs = "0.9"
+forensic-vfs = "0.10"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -65,8 +65,3 @@ too_many_lines           = { level = "allow", priority = 1 }
 items_after_statements   = { level = "allow", priority = 1 }
 similar_names            = { level = "allow", priority = 1 }
 manual_let_else          = { level = "allow", priority = 1 }
-
-# TEMPORARY, remove before publish: StreamKind::Data landed on forensic-vfs main
-# and is not yet on crates.io.
-[patch.crates-io]
-forensic-vfs = { path = "../forensic-vfs/crates/core" }

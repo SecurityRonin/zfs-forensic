@@ -73,7 +73,9 @@ dependencies = [
 
 [[package]]
 name = "forensic-vfs"
-version = "0.9.0"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5d81d96670e5a2852067344fbee8da2b1e7f21ede8c06a8b997db8c2e423e66"
 dependencies = [
  "forensicnomicon-core",
  "state-history-forensic",
