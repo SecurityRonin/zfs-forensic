@@ -288,6 +288,17 @@ pub fn zpl_read_file_with(
     let mut out = Vec::with_capacity(nblocks.saturating_mul(block_size).min(MAX_FILE_BYTES));
     for blkid in 0..nblocks {
         let block = read_dnode_data(image, &dnode, blkid as u64)?;
+        // Every level-0 dbuf of an object is the dnode's block size; a blkptr
+        // claiming more cannot be file content. Refusing it bounds the total at
+        // nblocks * block_size, i.e. MAX_FILE_BYTES, which counting blocks alone
+        // did not (each could claim up to MAX_BLOCK_SIZE).
+        if block.data.len() > block_size {
+            return Err(ZfsError::AllocationBomb {
+                field: "L0 block LSIZE, above the dnode's data block size",
+                value: block.data.len() as u64,
+                cap: block_size as u64,
+            });
+        }
         out.extend_from_slice(&block.data);
     }
     if let Some(sz) = size {
