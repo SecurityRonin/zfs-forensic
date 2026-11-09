@@ -71,9 +71,9 @@ pub use zap::{
 };
 pub use zpl::{
     zpl_attrs, zpl_list_dir, zpl_lookup, zpl_master_root, zpl_objset, zpl_read_file,
-    zpl_read_file_with, zpl_read_path, zpl_root_dir, zpl_sa_context, DMU_OT_SA, DMU_OT_ZNODE,
-    SA_LAYOUTS_NAME, SA_REGISTRY_NAME, ZPL_DIRENT_OBJ_MASK, ZPL_MASTER_NODE_OBJ, ZPL_ROOT_NAME,
-    ZPL_SA_ATTRS_NAME,
+    zpl_read_file_with, zpl_read_path, zpl_read_symlink, zpl_root_dir, zpl_sa_context, DMU_OT_SA,
+    DMU_OT_ZNODE, SA_LAYOUTS_NAME, SA_REGISTRY_NAME, ZFS_MAXPATHLEN, ZPL_DIRENT_OBJ_MASK,
+    ZPL_MASTER_NODE_OBJ, ZPL_ROOT_NAME, ZPL_SA_ATTRS_NAME,
 };
 
 /// Parse a packed XDR nvlist config from a buffer beginning with the 4-byte

@@ -23,8 +23,8 @@ use crate::error::ZfsError;
 use crate::objset::ObjsetPhys;
 use crate::read::{mos_dnode, read_block, read_dnode_data};
 use crate::sa::{
-    decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, SaLayouts, SaRegistry,
-    ZplAttrs,
+    decode_sa_bonus, decode_znode_phys, parse_sa_layouts, parse_sa_registry, sa_attr_bytes,
+    SaLayouts, SaRegistry, ZplAttrs, ZNODE_PHYS_SIZE,
 };
 use crate::zap::{read_zap_object, zap_list, zap_lookup};
 
@@ -154,6 +154,98 @@ pub fn zpl_attrs(
         DMU_OT_SA => decode_sa_bonus(&dnode.bonus, registry, layouts, dnode.endian),
         DMU_OT_ZNODE => decode_znode_phys(&dnode.bonus, dnode.endian),
         _ => None,
+    }
+}
+
+/// `MAXPATHLEN` on Linux (include/os/linux/spl/sys/sysmacros.h): `zfs_symlink`
+/// refuses a longer target with `ENAMETOOLONG`.
+pub const ZFS_MAXPATHLEN: u64 = 4096;
+
+/// Read the target of symlink object `object_id` where OpenZFS keeps it.
+///
+/// - An SA znode (`DMU_OT_SA`) keeps it in the `ZPL_SYMLINK` system attribute,
+///   whatever its length (`zfs_symlink` -> `sa_update(..., SA_ZPL_SYMLINK, ...)`;
+///   `zfs_readlink` -> `sa_lookup_uio`). It is read from the dnode's bonus.
+/// - A legacy znode (`DMU_OT_ZNODE`) keeps it in the bonus right after the
+///   264-byte `znode_phys_t` when it fits, otherwise in data block 0
+///   (`zfs_sa_symlink`, `module/zfs/zfs_sa.c`). Its length is the znode size,
+///   refused above [`ZFS_MAXPATHLEN`] before anything is read.
+///
+/// So the bytes read are at most the bonus, or one data block.
+///
+/// # Errors
+///
+/// - [`ZfsError::Truncated`] if the object is absent.
+/// - [`ZfsError::InvalidSymlink`] if an SA symlink has no readable
+///   `ZPL_SYMLINK` (including one moved to a spill block, which this reader does
+///   not decode), a legacy size exceeds [`ZFS_MAXPATHLEN`] or its stored bytes
+///   are shorter than it, or the bonus type is neither SA nor znode.
+/// - Propagates [`read_dnode_data`] errors for a target in data block 0.
+pub fn zpl_read_symlink(
+    image: &[u8],
+    zpl: &ObjsetPhys,
+    object_id: u64,
+) -> Result<Vec<u8>, ZfsError> {
+    let dnode = mos_dnode(image, zpl, object_id).ok_or(ZfsError::Truncated {
+        structure: "zpl symlink object (absent or empty slot)",
+        need: 1,
+        have: 0,
+    })?;
+    match dnode.dn_bonustype {
+        DMU_OT_SA => {
+            let target = zpl_sa_context(image, zpl).and_then(|(registry, layouts)| {
+                sa_attr_bytes(&dnode.bonus, &registry, &layouts, "ZPL_SYMLINK").map(<[u8]>::to_vec)
+            });
+            // A spilled ZPL_SYMLINK is a capability this reader lacks, not
+            // damage: the two must be told apart (ADR-0020).
+            let rule = if dnode.dn_flags & crate::xattr::DNODE_FLAG_SPILL_BLKPTR != 0 {
+                "ZPL_SYMLINK is not in the bonus and the dnode has a spill block, which \
+                 this reader does not decode (dn_flags)"
+            } else {
+                "an SA symlink keeps its target in ZPL_SYMLINK, absent from this bonus \
+                 (zfs_symlink, module/os/linux/zfs/zfs_vnops_os.c; dn_flags)"
+            };
+            target.ok_or(ZfsError::InvalidSymlink {
+                object: object_id,
+                rule,
+                found: u64::from(dnode.dn_flags),
+            })
+        }
+        DMU_OT_ZNODE => {
+            let size = decode_znode_phys(&dnode.bonus, dnode.endian)
+                .map(|a| a.size)
+                .ok_or(ZfsError::Truncated {
+                    structure: "zpl symlink znode_phys_t bonus",
+                    need: ZNODE_PHYS_SIZE,
+                    have: dnode.bonus.len(),
+                })?;
+            if size > ZFS_MAXPATHLEN {
+                return Err(ZfsError::InvalidSymlink {
+                    object: object_id,
+                    rule: "a target is at most MAXPATHLEN (4096) bytes (zfs_symlink)",
+                    found: size,
+                });
+            }
+            let len = size as usize;
+            if let Some(in_bonus) = dnode.bonus.get(ZNODE_PHYS_SIZE..ZNODE_PHYS_SIZE + len) {
+                return Ok(in_bonus.to_vec());
+            }
+            let block = read_dnode_data(image, &dnode, 0)?;
+            block
+                .data
+                .get(..len)
+                .map(<[u8]>::to_vec)
+                .ok_or(ZfsError::InvalidSymlink {
+                    object: object_id,
+                    rule: "data block 0 is shorter than the znode size (zfs_sa_symlink)",
+                    found: block.data.len() as u64,
+                })
+        }
+        other => Err(ZfsError::InvalidSymlink {
+            object: object_id,
+            rule: "the bonus is neither DMU_OT_SA (44) nor DMU_OT_ZNODE (17)",
+            found: u64::from(other),
+        }),
     }
 }
 

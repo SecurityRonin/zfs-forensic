@@ -700,10 +700,10 @@ impl FileSystem for ZfsFs {
             // A non-symlink reads as an empty target (matches ext4/NTFS/XFS/UFS).
             return Ok(Vec::new());
         }
-        // A "slow" symlink's target is the object's data. A "fast" symlink keeps
-        // it in the SA bonus under ZPL_SYMLINK, which ZplAttrs does not decode —
-        // that reads as empty rather than a fabricated target.
-        let mut target = self.content(obj)?;
+        // Read from where OpenZFS keeps it (ZPL_SYMLINK, or a legacy znode's
+        // bonus or block 0); `cap` only trims the result.
+        let mut target =
+            crate::zpl_read_symlink(&self.image, &self.zpl, obj).map_err(|e| decode_err(&e))?;
         target.truncate(cap);
         Ok(target)
     }
@@ -1750,6 +1750,69 @@ mod tests {
             .expect_err("a 5000-byte symlink must be refused");
         let msg = err.to_string();
         assert!(msg.contains("5000") && msg.contains("4096"), "{msg}");
+    }
+
+    /// Byte offset of object `obj`'s 512-byte dnode in the crafted image: the ZPL
+    /// dnode array starts four blocks past the boot skew.
+    fn zpl_dnode_at(obj: usize) -> usize {
+        BOOT_SKEW as usize + 4 * BLOCK + obj * DNODE_SZ
+    }
+
+    fn patched(edit: impl FnOnce(&mut Vec<u8>)) -> ZfsFs {
+        let mut img = build_image(DMU_OST_ZFS);
+        edit(&mut img);
+        ZfsFs::open(&src(img)).expect("the patched pool mounts")
+    }
+
+    #[test]
+    fn a_spilled_zpl_symlink_is_reported_as_not_decoded_not_as_damage() {
+        // dn_flags is dnode byte 7; DNODE_FLAG_SPILL_BLKPTR is bit 2.
+        let fs = patched(|img| img[zpl_dnode_at(8) + 7] |= 1 << 2);
+        let err = fs.read_link(FileId::Opaque(8), 256).unwrap_err();
+        assert!(err.to_string().contains("spill block"), "{err}");
+    }
+
+    #[test]
+    fn zpl_read_symlink_refuses_what_read_link_never_passes_it() {
+        // read_link only calls zpl_read_symlink for a node whose mode is a
+        // symlink, so these are driven directly.
+        let fs = mounted();
+        assert!(matches!(
+            crate::zpl_read_symlink(&fs.image, &fs.zpl, 999),
+            Err(crate::ZfsError::Truncated { .. })
+        ));
+        // obj 4 is a ZAP object: its bonus type (0) is neither SA nor znode.
+        assert!(matches!(
+            crate::zpl_read_symlink(&fs.image, &fs.zpl, 4),
+            Err(crate::ZfsError::InvalidSymlink { found: 0, .. })
+        ));
+        // obj 11 with a 100-byte bonus cannot hold the 264-byte znode_phys_t.
+        let fs = patched(|img| {
+            let d = zpl_dnode_at(11);
+            img[d + 10..d + 12].copy_from_slice(&100u16.to_le_bytes());
+        });
+        assert!(matches!(
+            crate::zpl_read_symlink(&fs.image, &fs.zpl, 11),
+            Err(crate::ZfsError::Truncated { .. })
+        ));
+    }
+
+    #[test]
+    fn a_legacy_target_longer_than_its_block_is_refused_loud() {
+        // obj 12 declares 1000 bytes (too long for the bonus, within
+        // MAXPATHLEN) while its block 0 is one 512-byte sector: LSIZE and PSIZE
+        // (sectors - 1) are the low two 16-bit fields of the blkptr word at +48.
+        let fs = patched(|img| {
+            let d = zpl_dnode_at(12);
+            img[d + 192 + 80..d + 192 + 88].copy_from_slice(&1000u64.to_le_bytes());
+            let prop = d + 64 + 48;
+            img[prop..prop + 4].copy_from_slice(&0u32.to_le_bytes());
+        });
+        let err = crate::zpl_read_symlink(&fs.image, &fs.zpl, 12).unwrap_err();
+        assert!(
+            matches!(err, crate::ZfsError::InvalidSymlink { found: 512, .. }),
+            "{err}"
+        );
     }
 
     #[test]

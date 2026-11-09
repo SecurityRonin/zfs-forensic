@@ -153,6 +153,10 @@ pub zfs_core::ZfsError::Decompress::codec: &'static str
 pub zfs_core::ZfsError::Decompress::reason: &'static str
 pub zfs_core::ZfsError::EmbeddedBlkptr
 pub zfs_core::ZfsError::EmbeddedBlkptr::lsize: u64
+pub zfs_core::ZfsError::InvalidSymlink
+pub zfs_core::ZfsError::InvalidSymlink::found: u64
+pub zfs_core::ZfsError::InvalidSymlink::object: u64
+pub zfs_core::ZfsError::InvalidSymlink::rule: &'static str
 pub zfs_core::ZfsError::NoUberblock
 pub zfs_core::ZfsError::NoUberblock::scanned: usize
 pub zfs_core::ZfsError::NvlistBomb
@@ -347,6 +351,7 @@ pub const zfs_core::ZAP_MAGIC: u64
 pub const zfs_core::ZBT_HEADER: u64
 pub const zfs_core::ZBT_LEAF: u64
 pub const zfs_core::ZBT_MICRO: u64
+pub const zfs_core::ZFS_MAXPATHLEN: u64
 pub const zfs_core::ZNODE_PHYS_SIZE: usize
 pub const zfs_core::ZPL_DIRENT_OBJ_MASK: u64
 pub const zfs_core::ZPL_MASTER_NODE_OBJ: u64
@@ -382,5 +387,6 @@ pub fn zfs_core::zpl_objset(&[u8], &zfs_core::ObjsetPhys) -> core::option::Optio
 pub fn zfs_core::zpl_read_file(&[u8], &zfs_core::ObjsetPhys, u64) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
 pub fn zfs_core::zpl_read_file_with(&[u8], &zfs_core::ObjsetPhys, u64, core::option::Option<u64>) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
 pub fn zfs_core::zpl_read_path(&[u8], &zfs_core::ObjsetPhys, &str) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
+pub fn zfs_core::zpl_read_symlink(&[u8], &zfs_core::ObjsetPhys, u64) -> core::result::Result<alloc::vec::Vec<u8>, zfs_core::ZfsError>
 pub fn zfs_core::zpl_root_dir(&[u8], &zfs_core::ObjsetPhys) -> core::option::Option<zfs_core::Dnode>
 pub fn zfs_core::zpl_sa_context(&[u8], &zfs_core::ObjsetPhys) -> core::option::Option<(zfs_core::SaRegistry, zfs_core::SaLayouts)>

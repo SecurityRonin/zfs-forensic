@@ -50,7 +50,7 @@ use crate::sa::sa_attr_bytes;
 use crate::zpl::{zpl_list_dir, zpl_read_file, zpl_sa_context};
 
 /// `DNODE_FLAG_SPILL_BLKPTR` — the dnode carries a spill block pointer.
-const DNODE_FLAG_SPILL_BLKPTR: u8 = 1 << 2;
+pub(crate) const DNODE_FLAG_SPILL_BLKPTR: u8 = 1 << 2;
 
 /// Registry name of the packed-xattr System Attribute (`xattr=sa`).
 const ZPL_DXATTR: &str = "ZPL_DXATTR";

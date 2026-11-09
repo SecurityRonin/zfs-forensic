@@ -115,4 +115,17 @@ pub enum ZfsError {
         /// The maximum valid value.
         max: u64,
     },
+
+    /// A symlink object breaks a rule OpenZFS applies to every symlink, so its
+    /// target cannot be read. Carries the object, the rule, and the offending
+    /// value.
+    #[error("symlink object {object}: {rule}, found {found}")]
+    InvalidSymlink {
+        /// The symlink's object id.
+        object: u64,
+        /// The rule that was broken, with its OpenZFS source.
+        rule: &'static str,
+        /// The offending value (a length, or a bonus type).
+        found: u64,
+    },
 }
