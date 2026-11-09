@@ -763,6 +763,15 @@ mod tests {
     const ID_ZPL_SIZE: u16 = 6;
     const HELLO: &[u8] = b"hello, zfs!\n";
     const LINK_TARGET: &[u8] = b"hello.txt";
+    /// An id the crafted registry gives `ZPL_SYMLINK` (variable-length, size 0).
+    const ID_ZPL_SYMLINK: u16 = 21;
+    /// obj 10: an SA symlink, its target in `ZPL_SYMLINK`.
+    const SA_TARGET: &[u8] = b"sa/fast/target";
+    /// obj 11: a legacy-znode symlink whose target fits the bonus after `znode_phys`.
+    const BONUS_TARGET: &[u8] = b"in/the/bonus";
+    /// obj 12: a legacy-znode symlink too long for the bonus, so in data block 0.
+    const SLOW_TARGET: &[u8] =
+        b"a/legacy/target/too/long/for/the/dnode/bonus/after/znode_phys/so/it/is/in/block/zero";
 
     fn xdr_pad(len: usize) -> usize {
         len.div_ceil(4) * 4
@@ -924,6 +933,21 @@ mod tests {
         v
     }
 
+    /// An SA bonus in layout 2 (`ZPL_MODE`, `ZPL_SIZE`, `ZPL_SYMLINK`): an 8-byte
+    /// header whose one `sa_lengths[]` slot holds the symlink length, then mode,
+    /// size and the target (`sa_impl.h` `sa_hdr_phys_t`).
+    fn sa_symlink_bonus(target: &[u8]) -> Vec<u8> {
+        let mut v = vec![0u8; 24];
+        v[0..4].copy_from_slice(&SA_MAGIC.to_le_bytes());
+        let info: u16 = 2 | (1 << 10);
+        v[4..6].copy_from_slice(&info.to_le_bytes());
+        v[6..8].copy_from_slice(&(target.len() as u16).to_le_bytes());
+        v[8..16].copy_from_slice(&0o120_777u64.to_le_bytes());
+        v[16..24].copy_from_slice(&(target.len() as u64).to_le_bytes());
+        v.extend_from_slice(target);
+        v
+    }
+
     /// A legacy `znode_phys_t` bonus: atime@0, mtime@16, ctime@32, crtime@48,
     /// gen@64, mode@72, size@80, parent@88, links@96.
     fn znode_bonus(mode: u64, size: u64) -> Vec<u8> {
@@ -982,6 +1006,8 @@ mod tests {
         let subdir = (base + 12 * BLOCK) as u64;
         let link = (base + 13 * BLOCK) as u64;
         let znode_file = (base + 14 * BLOCK) as u64;
+        let slow_link = (base + 15 * BLOCK) as u64;
+        let empty = (base + 16 * BLOCK) as u64;
 
         let mut img = vec![0u8; IMAGE_LEN];
 
@@ -1014,10 +1040,10 @@ mod tests {
         let od = micro_zap(&[("root_dataset", 2)]);
         img[obj_dir as usize..obj_dir as usize + od.len()].copy_from_slice(&od);
 
-        let zpl = objset_block(zpl_arr, 10, zpl_os_type);
+        let zpl = objset_block(zpl_arr, 14, zpl_os_type);
         img[zpl_phys as usize..zpl_phys as usize + zpl.len()].copy_from_slice(&zpl);
 
-        let mut za = vec![0u8; 10 * DNODE_SZ];
+        let mut za = vec![0u8; 14 * DNODE_SZ];
         za[DNODE_SZ..2 * DNODE_SZ].copy_from_slice(&zap_dnode(master));
         za[2 * DNODE_SZ..3 * DNODE_SZ].copy_from_slice(&zap_dnode(root));
         za[3 * DNODE_SZ..4 * DNODE_SZ].copy_from_slice(&dnode(
@@ -1046,6 +1072,28 @@ mod tests {
             DMU_OT_ZNODE,
             &znode_bonus(0o100_600, HELLO.len() as u64),
         ));
+        // obj 10: an SA symlink, as every SA dataset writes one: target in ZPL_SYMLINK.
+        za[10 * DNODE_SZ..11 * DNODE_SZ].copy_from_slice(&dnode(
+            empty,
+            DMU_OT_SA,
+            &sa_symlink_bonus(SA_TARGET),
+        ));
+        // obj 11: a legacy symlink whose target follows znode_phys in the bonus.
+        let mut in_bonus = znode_bonus(0o120_777, BONUS_TARGET.len() as u64);
+        in_bonus.extend_from_slice(BONUS_TARGET);
+        za[11 * DNODE_SZ..12 * DNODE_SZ].copy_from_slice(&dnode(empty, DMU_OT_ZNODE, &in_bonus));
+        // obj 12: a legacy symlink too long for the bonus (264 + len > 320): block 0.
+        za[12 * DNODE_SZ..13 * DNODE_SZ].copy_from_slice(&dnode(
+            slow_link,
+            DMU_OT_ZNODE,
+            &znode_bonus(0o120_777, SLOW_TARGET.len() as u64),
+        ));
+        // obj 13: a legacy symlink declaring 5000 bytes, past MAXPATHLEN (4096).
+        za[13 * DNODE_SZ..14 * DNODE_SZ].copy_from_slice(&dnode(
+            slow_link,
+            DMU_OT_ZNODE,
+            &znode_bonus(0o120_777, 5000),
+        ));
         img[zpl_arr as usize..zpl_arr as usize + za.len()].copy_from_slice(&za);
 
         let m = micro_zap(&[("ROOT", 2), ("VERSION", 5), ("SA_ATTRS", 4)]);
@@ -1068,15 +1116,24 @@ mod tests {
         let reg = micro_zap(&[
             ("ZPL_MODE", registry_value(ID_ZPL_MODE, 8)),
             ("ZPL_SIZE", registry_value(ID_ZPL_SIZE, 8)),
+            ("ZPL_SYMLINK", registry_value(ID_ZPL_SYMLINK, 0)),
         ]);
         img[sa_registry as usize..sa_registry as usize + reg.len()].copy_from_slice(&reg);
 
-        let lay = micro_zap(&[("1", layout_value(&[ID_ZPL_MODE, ID_ZPL_SIZE]))]);
+        let lay = micro_zap(&[
+            ("1", layout_value(&[ID_ZPL_MODE, ID_ZPL_SIZE])),
+            (
+                "2",
+                layout_value(&[ID_ZPL_MODE, ID_ZPL_SIZE, ID_ZPL_SYMLINK]),
+            ),
+        ]);
         img[sa_layouts as usize..sa_layouts as usize + lay.len()].copy_from_slice(&lay);
 
         img[file as usize..file as usize + HELLO.len()].copy_from_slice(HELLO);
         img[link as usize..link as usize + LINK_TARGET.len()].copy_from_slice(LINK_TARGET);
         img[znode_file as usize..znode_file as usize + HELLO.len()].copy_from_slice(HELLO);
+        img[slow_link as usize..slow_link as usize + SLOW_TARGET.len()]
+            .copy_from_slice(SLOW_TARGET);
 
         img
     }
@@ -1630,14 +1687,17 @@ mod tests {
 
     #[test]
     fn read_link_returns_a_slow_symlink_target_and_empty_for_a_non_symlink() {
+        // A legacy-znode symlink too long for its bonus keeps its target in data
+        // block 0 (zfs_sa_symlink, module/zfs/zfs_sa.c). obj 8 used to stand in
+        // for this, but it is an SA znode, which OpenZFS never reads that way.
         let fs = mounted();
-        let target = fs.read_link(FileId::Opaque(8), 256).expect("read_link");
-        assert_eq!(&target[..LINK_TARGET.len()], LINK_TARGET);
+        let target = fs.read_link(FileId::Opaque(12), 256).expect("read_link");
+        assert_eq!(target, SLOW_TARGET);
         // The cap truncates.
         let short = fs
-            .read_link(FileId::Opaque(8), 5)
+            .read_link(FileId::Opaque(12), 5)
             .expect("read_link capped");
-        assert_eq!(short.len(), 5);
+        assert_eq!(short, &SLOW_TARGET[..5]);
         // A regular file reads as an empty target.
         assert!(fs
             .read_link(FileId::Opaque(3), 256)
@@ -1648,6 +1708,48 @@ mod tests {
             .read_link(FileId::Opaque(1), 256)
             .expect("read_link")
             .is_empty());
+    }
+
+    #[test]
+    fn an_sa_symlink_target_is_read_from_zpl_symlink() {
+        // Every symlink on an SA dataset keeps its target in the ZPL_SYMLINK
+        // system attribute: zfs_symlink -> sa_update(..., SA_ZPL_SYMLINK, link,
+        // len), and zfs_readlink -> sa_lookup_uio(SA_ZPL_SYMLINK)
+        // (module/os/linux/zfs/zfs_vnops_os.c).
+        let fs = mounted();
+        assert_eq!(fs.read_link(FileId::Opaque(10), 256).unwrap(), SA_TARGET);
+    }
+
+    #[test]
+    fn a_legacy_symlink_target_is_read_from_the_bonus_after_znode_phys() {
+        // zfs_sa_symlink: a target that fits (264 + len <= bonus max) is stored
+        // in the bonus right after the old znode_phys_t.
+        let fs = mounted();
+        assert_eq!(fs.read_link(FileId::Opaque(11), 256).unwrap(), BONUS_TARGET);
+    }
+
+    #[test]
+    fn an_sa_symlink_without_zpl_symlink_is_refused_loud() {
+        // obj 8 is an SA znode with no ZPL_SYMLINK attribute. OpenZFS would not
+        // read its data block instead, and "no target" would be a negative
+        // finding the image does not support, so it is an error.
+        let fs = mounted();
+        let err = fs
+            .read_link(FileId::Opaque(8), 256)
+            .expect_err("an SA symlink must carry ZPL_SYMLINK");
+        assert!(err.to_string().contains("ZPL_SYMLINK"), "{err}");
+    }
+
+    #[test]
+    fn a_symlink_longer_than_maxpathlen_is_refused_loud() {
+        // zfs_symlink refuses len > MAXPATHLEN (4096 on Linux) with
+        // ENAMETOOLONG. obj 13 declares 5000 bytes.
+        let fs = mounted();
+        let err = fs
+            .read_link(FileId::Opaque(13), 8192)
+            .expect_err("a 5000-byte symlink must be refused");
+        let msg = err.to_string();
+        assert!(msg.contains("5000") && msg.contains("4096"), "{msg}");
     }
 
     #[test]

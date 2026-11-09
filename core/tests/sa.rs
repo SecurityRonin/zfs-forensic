@@ -303,3 +303,14 @@ fn zpl_lookup_and_read_path_resolve_nested_file_end_to_end() {
     // A missing path resolves to None.
     assert!(zpl_lookup(&img, &zpl, "/does/not/exist").is_none());
 }
+
+/// `ZPL_SYMLINK` is where every SA-dataset symlink keeps its target
+/// (`zfs_symlink` -> `sa_update(..., SA_ZPL_SYMLINK(zfsvfs), link, len)`), and
+/// it is variable-length: the registry records size 0, so its length comes from
+/// the bonus's `sa_lengths[]`. Read from the real FreeBSD-minted registry.
+#[test]
+fn sa_registry_registers_zpl_symlink_as_variable_length() {
+    let reg = parse_sa_registry(SA_REGISTRY);
+    let symlink = reg.by_name("ZPL_SYMLINK").expect("ZPL_SYMLINK registered");
+    assert_eq!(symlink.size, 0, "variable-length: {symlink:?}");
+}
