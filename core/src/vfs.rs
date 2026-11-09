@@ -1816,6 +1816,23 @@ mod tests {
     }
 
     #[test]
+    fn a_data_block_larger_than_the_dnode_block_size_is_refused_loud() {
+        // Every level-0 dbuf of an object is dn_datablkszsec << 9 bytes, so a
+        // blkptr claiming a larger LSIZE cannot be file content. Unchecked, up
+        // to 512 MiB / block-size blocks of up to 32 MiB each are appended.
+        // obj 3's block is 4096 bytes; claim 8192 (LSIZE and PSIZE = 15 sectors
+        // + 1, the low two 16-bit fields of the blkptr word at +48).
+        let fs = patched(|img| {
+            let prop = zpl_dnode_at(3) + 64 + 48;
+            img[prop..prop + 2].copy_from_slice(&15u16.to_le_bytes());
+            img[prop + 2..prop + 4].copy_from_slice(&15u16.to_le_bytes());
+        });
+        let err = crate::zpl_read_file_with(&fs.image, &fs.zpl, 3, None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("8192") && msg.contains("4096"), "{msg}");
+    }
+
+    #[test]
     fn deleted_and_unallocated_are_empty_by_design() {
         let fs = mounted();
         assert_eq!(fs.deleted().expect("deleted").count(), 0);
