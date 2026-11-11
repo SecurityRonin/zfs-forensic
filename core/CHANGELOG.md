@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/SecurityRonin/zfs-forensic/compare/zfs-forensic-core-v0.2.0...zfs-forensic-core-v0.2.1) - 2026-11-09
+
+### Fixed
+
+- *(zpl)* refuse a data block larger than the dnode's block size
+- *(vfs)* read ZFS symlinks where OpenZFS keeps them, refuse what it never writes
+
 ## [0.2.0](https://github.com/SecurityRonin/zfs-forensic/compare/zfs-forensic-core-v0.1.2...zfs-forensic-core-v0.2.0) - 2026-11-04
 
 ### Added
